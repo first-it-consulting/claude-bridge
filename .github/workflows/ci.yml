@@ -57,7 +57,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "dist/Claude Bridge.app"
           test -f dist/ClaudeBridge-$(cat VERSION).dmg
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ClaudeBridge-dmg-${{ github.sha }}
           path: |
