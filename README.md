@@ -6,6 +6,7 @@
 [![Release](https://img.shields.io/github/v/release/first-it-consulting/claude-bridge?sort=semver)](https://github.com/first-it-consulting/claude-bridge/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)
+![Universal](https://img.shields.io/badge/Universal-arm64%20%7C%20x86__64-black?logo=apple)
 
 A macOS menu bar app that lets **Claude Desktop** talk to local and remote LLMs —
 Ollama, LM Studio, llama.cpp, vLLM, OpenRouter, Groq, LiteLLM, or anything else
@@ -67,7 +68,7 @@ Haiku and a large one to Opus gets you sensible routing for free.
 
 ## Requirements
 
-- macOS 14 or later
+- macOS 14 (Sonoma) or later, Apple Silicon or Intel
 - Claude Desktop with third-party inference available
 - Swift 6 toolchain to build (Xcode 16+)
 

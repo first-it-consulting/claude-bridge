@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Release builds are now universal. 0.1.0 shipped an arm64-only binary, because
+  `swift build` targets the host architecture and the release was cut on Apple
+  Silicon, so it could not launch on an Intel Mac at all. CI now fails if either
+  architecture is missing from the packaged app.
+
 ## [0.1.0] - 2026-09-06
 
 First release.

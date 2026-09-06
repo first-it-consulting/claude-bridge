@@ -56,10 +56,22 @@ jobs:
         env:
           RUNNER_TEMP: ${{ runner.temp }}
 
-      - name: Verify the app bundle launches its checks
+      - name: Verify the packaged app
         run: |
           codesign --verify --deep --strict --verbose=2 "dist/Claude Bridge.app"
           test -f dist/ClaudeBridge-$(cat VERSION).dmg
+          # A release that quietly loses a slice will not launch on that
+          # architecture at all, and nothing else in the pipeline would notice.
+          archs="$(lipo -archs "dist/Claude Bridge.app/Contents/MacOS/Claude Bridge")"
+          echo "architectures: $archs"
+          case "$archs" in
+            *arm64*) ;;
+            *) echo "::error::missing arm64 slice"; exit 1 ;;
+          esac
+          case "$archs" in
+            *x86_64*) ;;
+            *) echo "::error::missing x86_64 slice"; exit 1 ;;
+          esac
 
       - uses: actions/upload-artifact@v7
         with:

@@ -120,6 +120,11 @@ Each of these caused a real failure; the code carries comments explaining why.
   every existing `settings.json` fail to decode, and `ProfileStore.load()` falls
   back to starter profiles — silent data loss. `ModelMapping.origin` is optional
   for this reason, and a nil origin means "discovered".
+- **Release builds must be universal.** `swift build` targets the host
+  architecture, so a release cut on Apple Silicon produces an arm64-only app
+  that will not launch on an Intel Mac. `scripts/build-app.sh` passes
+  `--arch arm64 --arch x86_64` for release and takes the binary from
+  `.build/apple/Products/Release`, not `.build/release`.
 - Ad-hoc signing changes the binary's cdhash on every build, so macOS re-prompts
   for keychain items. That is expected in development, not a bug to fix.
 

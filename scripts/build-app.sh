@@ -17,11 +17,22 @@ VERSION="$(cat "$ROOT/VERSION" 2>/dev/null || echo "0.1.0")"
 BUILD="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 0)"
 YEAR="$(date +%Y)"
 
-BUILD_DIR="$ROOT/.build/$CONFIG"
 APP="$ROOT/dist/$APP_NAME.app"
 
-echo "==> Building ($CONFIG)"
-swift build -c "$CONFIG" --package-path "$ROOT"
+# Release builds are universal. `swift build` targets the host architecture
+# only, so a release cut on an Apple Silicon machine — or on GitHub's macOS
+# runners, which are Apple Silicon — produces an arm64 binary that will not
+# launch on an Intel Mac at all. Debug builds stay single-architecture because
+# nobody is shipping those and the second slice doubles the build.
+if [ "$CONFIG" = "release" ]; then
+    echo "==> Building (release, universal)"
+    swift build -c release --package-path "$ROOT" --arch arm64 --arch x86_64
+    BUILD_DIR="$ROOT/.build/apple/Products/Release"
+else
+    echo "==> Building ($CONFIG)"
+    swift build -c "$CONFIG" --package-path "$ROOT"
+    BUILD_DIR="$ROOT/.build/$CONFIG"
+fi
 
 echo "==> Assembling $APP ($VERSION build $BUILD)"
 rm -rf "$APP"
@@ -66,6 +77,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+
+echo "==> Architectures: $(lipo -archs "$APP/Contents/MacOS/$APP_NAME")"
 
 echo "==> Signing (ad-hoc)"
 # Ad-hoc is enough to run locally and keeps keychain access stable across
