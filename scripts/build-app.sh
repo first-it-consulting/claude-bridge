@@ -26,8 +26,26 @@ APP="$ROOT/dist/$APP_NAME.app"
 # nobody is shipping those and the second slice doubles the build.
 if [ "$CONFIG" = "release" ]; then
     echo "==> Building (release, universal)"
-    swift build -c release --package-path "$ROOT" --arch arm64 --arch x86_64
-    BUILD_DIR="$ROOT/.build/apple/Products/Release"
+    # Each slice is built separately and joined with lipo, rather than passing
+    # `--arch arm64 --arch x86_64` in one go. That form switches SwiftPM to the
+    # Xcode build system, which fails on a transitive swift-nio dependency with
+    # the toolchain on GitHub's macOS runners:
+    #
+    #   error: 'swift-collections': Some of the Swift language versions used in
+    #   target '_RopeModule' settings are supported. (given: [5], supported: [])
+    #
+    # It still prints "Build complete!" before exiting non-zero, so the failure
+    # reads like a success until you check the status. Per-triple builds use the
+    # native build system and avoid it entirely.
+    for triple in arm64-apple-macosx x86_64-apple-macosx; do
+        swift build -c release --package-path "$ROOT" --triple "$triple"
+    done
+
+    BUILD_DIR="$ROOT/.build/universal"
+    mkdir -p "$BUILD_DIR"
+    lipo -create -output "$BUILD_DIR/claude-bridge" \
+        "$ROOT/.build/arm64-apple-macosx/release/claude-bridge" \
+        "$ROOT/.build/x86_64-apple-macosx/release/claude-bridge"
 else
     echo "==> Building ($CONFIG)"
     swift build -c "$CONFIG" --package-path "$ROOT"

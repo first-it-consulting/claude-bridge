@@ -123,8 +123,11 @@ Each of these caused a real failure; the code carries comments explaining why.
 - **Release builds must be universal.** `swift build` targets the host
   architecture, so a release cut on Apple Silicon produces an arm64-only app
   that will not launch on an Intel Mac. `scripts/build-app.sh` passes
-  `--arch arm64 --arch x86_64` for release and takes the binary from
-  `.build/apple/Products/Release`, not `.build/release`.
+  builds each slice with `--triple` and joins them with `lipo`. Do not switch
+  it to `--arch arm64 --arch x86_64`: that form selects the Xcode build system,
+  which fails on swift-collections' `_RopeModule` with the toolchain on GitHub's
+  runners — and prints "Build complete!" before exiting non-zero, so it reads
+  like a success.
 - Ad-hoc signing changes the binary's cdhash on every build, so macOS re-prompts
   for keychain items. That is expected in development, not a bug to fix.
 
