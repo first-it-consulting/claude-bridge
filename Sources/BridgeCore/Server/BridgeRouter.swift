@@ -303,16 +303,23 @@ public actor BridgeRouter {
     /// heard of. Falling back keeps that from being a dead end: an exact match
     /// wins, then anything in the same tier, then the profile's default.
     func resolveModel(requested: String) -> ModelMapping? {
-        let models = profile.enabledModels
-        guard !models.isEmpty else { return nil }
+        let served = profile.servedModels
+        guard !served.isEmpty else { return nil }
 
-        if let exact = models.first(where: { $0.upstreamID == requested }) { return exact }
+        // Exact match on what was advertised. This is also what turns an alias
+        // like "qwen3:8b#haiku" back into the real model name.
+        if let entry = served.first(where: { $0.advertisedID == requested }) {
+            return entry.mapping
+        }
+        if let entry = served.first(where: { $0.mapping.upstreamID == requested }) {
+            return entry.mapping
+        }
 
         let lower = requested.lowercased()
         if let tier = FamilyTier.allCases.first(where: { lower.contains($0.rawValue) }) {
-            let inTier = models.filter { $0.tier == tier }
-            if let preferred = inTier.first(where: \.isFamilyDefault) ?? inTier.first {
-                return preferred
+            let inTier = served.filter { $0.mapping.tier == tier }
+            if let preferred = inTier.first(where: { $0.mapping.isFamilyDefault }) ?? inTier.first {
+                return preferred.mapping
             }
         }
         return profile.defaultModel

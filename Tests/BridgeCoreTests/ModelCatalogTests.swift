@@ -145,3 +145,67 @@ struct ServedModelsTests {
         #expect(flagged?.count == 1)
     }
 }
+
+@Suite("One model backing several tiers")
+struct SharedModelTests {
+
+    /// A machine with limited VRAM keeps one model loaded and wants every tier
+    /// to route to it.
+    func sharedProfile() -> Profile {
+        Profile(name: "p", models: [
+            ModelMapping(upstreamID: "qwen3-coder-next:latest", tier: .sonnet, isFamilyDefault: true),
+            ModelMapping(upstreamID: "qwen3-coder-next:latest", tier: .haiku, isFamilyDefault: true),
+            ModelMapping(upstreamID: "qwen3-coder-next:latest", tier: .opus, isFamilyDefault: true),
+        ])
+    }
+
+    @Test("each tier gets a distinct advertised id")
+    func uniqueAdvertisedIDs() {
+        let served = sharedProfile().servedModels
+        let ids = served.map(\.advertisedID)
+        #expect(Set(ids).count == ids.count)
+        // The first keeps the bare name so the common single-tier case is
+        // unaffected.
+        #expect(ids[0] == "qwen3-coder-next:latest")
+        #expect(ids.contains("qwen3-coder-next:latest#haiku"))
+        #expect(ids.contains("qwen3-coder-next:latest#opus"))
+    }
+
+    @Test("aliases are labelled so the picker does not show three identical rows")
+    func aliasLabels() {
+        let served = sharedProfile().servedModels
+        #expect(served[0].displayName == "qwen3-coder-next:latest")
+        #expect(served[1].displayName == "qwen3-coder-next:latest (Haiku)")
+    }
+
+    @Test("every tier is served and flagged as its own default")
+    func perTierDefaults() {
+        let data = ModelCatalog.modelsResponse(for: sharedProfile())["data"]!.arrayValue!
+        let defaults = data.filter { $0["is_family_default"]?.boolValue == true }
+        #expect(Set(defaults.compactMap { $0["anthropic_family_tier"]?.stringValue })
+                == ["sonnet", "haiku", "opus"])
+    }
+
+    @Test("an aliased id resolves back to the real model name")
+    func aliasResolvesToUpstream() async {
+        let router = BridgeRouter(
+            profile: sharedProfile(), apiKey: nil, token: "", log: RequestLog()
+        )
+        let haiku = await router.resolveModel(requested: "qwen3-coder-next:latest#haiku")
+        #expect(haiku?.upstreamID == "qwen3-coder-next:latest")
+        #expect(haiku?.tier == .haiku)
+
+        let plain = await router.resolveModel(requested: "qwen3-coder-next:latest")
+        #expect(plain?.tier == .sonnet)
+    }
+
+    @Test("an explicit label wins over the generated one")
+    func explicitLabel() {
+        let profile = Profile(name: "p", models: [
+            ModelMapping(upstreamID: "m", tier: .sonnet),
+            ModelMapping(upstreamID: "m", displayName: "Fast lane", tier: .haiku),
+        ])
+        #expect(profile.servedModels[1].displayName == "Fast lane")
+    }
+}
+

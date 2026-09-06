@@ -13,24 +13,24 @@ public enum ModelCatalog {
 
     /// The response for `GET /v1/models`.
     public static func modelsResponse(for profile: Profile) -> JSONValue {
-        let models = profile.enabledModels
+        let served = profile.servedModels
 
         // Only one model per tier may be the family default; the first flagged
         // entry wins, matching how Claude Desktop resolves ties itself.
         var tierClaimed: Set<FamilyTier> = []
 
-        let data: [JSONValue] = models.map { model in
+        let data: [JSONValue] = served.map { entry in
             var isDefault = false
-            if model.isFamilyDefault, !tierClaimed.contains(model.tier) {
+            if entry.mapping.isFamilyDefault, !tierClaimed.contains(entry.mapping.tier) {
                 isDefault = true
-                tierClaimed.insert(model.tier)
+                tierClaimed.insert(entry.mapping.tier)
             }
             return .object([
-                "id": .string(model.upstreamID),
+                "id": .string(entry.advertisedID),
                 "type": "model",
-                "display_name": .string(model.label),
+                "display_name": .string(entry.displayName),
                 "created_at": .string(ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: 0))),
-                "anthropic_family_tier": .string(model.tier.rawValue),
+                "anthropic_family_tier": .string(entry.mapping.tier.rawValue),
                 "is_family_default": .bool(isDefault),
             ])
         }
@@ -38,8 +38,8 @@ public enum ModelCatalog {
         return .object([
             "data": .array(data),
             "has_more": false,
-            "first_id": models.first.map { .string($0.upstreamID) } ?? .null,
-            "last_id": models.last.map { .string($0.upstreamID) } ?? .null,
+            "first_id": served.first.map { .string($0.advertisedID) } ?? .null,
+            "last_id": served.last.map { .string($0.advertisedID) } ?? .null,
         ])
     }
 
@@ -153,6 +153,9 @@ public enum ModelCatalog {
         let removed = existing.filter { isStale($0) && $0.isDiscoveryOwned }
         let unavailable = existing.filter { isStale($0) && !$0.isDiscoveryOwned }
 
+        // A row left blank is one nobody finished filling in. Reconciliation
+        // runs at launch, so nothing here is mid-edit, and an empty row is only
+        // clutter — it is never served.
         var models = existing.filter { !isStale($0) || !$0.isDiscoveryOwned }
         var added = 0
         for model in discovered where !known.contains(model.id) {

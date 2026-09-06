@@ -200,6 +200,53 @@ public struct Profile: Codable, Hashable, Identifiable, Sendable {
         models.filter { $0.enabled && !$0.upstreamID.trimmingCharacters(in: .whitespaces).isEmpty }
     }
 
+    /// One entry as Claude Desktop sees it, paired with the mapping behind it.
+    public struct ServedModel: Sendable, Hashable {
+        /// The id advertised on `GET /v1/models` and sent back on requests.
+        public var advertisedID: String
+        /// What to call it in the picker.
+        public var displayName: String
+        public var mapping: ModelMapping
+    }
+
+    /// The served list, with an id that is unique across entries.
+    ///
+    /// The same backend model may legitimately back several tiers — one loaded
+    /// model is often all a machine has VRAM for, and every tier should still
+    /// route somewhere. Claude Desktop keys its picker on the model id, so the
+    /// duplicates need distinct ids: the first entry keeps the bare model name
+    /// and the rest are suffixed with their tier. `BridgeRouter` maps the
+    /// suffixed id back to the real one before calling the backend.
+    public var servedModels: [ServedModel] {
+        var used: Set<String> = []
+        return enabledModels.map { mapping in
+            var advertised = mapping.upstreamID
+            if used.contains(advertised) {
+                advertised = "\(mapping.upstreamID)#\(mapping.tier.rawValue)"
+                // Two rows for the same model *and* tier: rare, but the id
+                // still has to be unique or one of them is unreachable.
+                var counter = 2
+                while used.contains(advertised) {
+                    advertised = "\(mapping.upstreamID)#\(mapping.tier.rawValue)-\(counter)"
+                    counter += 1
+                }
+            }
+            used.insert(advertised)
+
+            let name: String
+            if let explicit = mapping.displayName?.trimmingCharacters(in: .whitespaces), !explicit.isEmpty {
+                name = explicit
+            } else if advertised == mapping.upstreamID {
+                name = mapping.upstreamID
+            } else {
+                // Distinguish the alias in the picker, where two rows would
+                // otherwise read identically.
+                name = "\(mapping.upstreamID) (\(mapping.tier.displayName))"
+            }
+            return ServedModel(advertisedID: advertised, displayName: name, mapping: mapping)
+        }
+    }
+
     /// The mapping Claude Desktop should land on when it opens the picker:
     /// the flagged family default, else the first enabled model.
     public var defaultModel: ModelMapping? {
