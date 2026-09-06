@@ -11,6 +11,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="Claude Bridge"
 BUNDLE_ID="com.claudebridge.app"
 VERSION="$(cat "$ROOT/VERSION" 2>/dev/null || echo "0.1.0")"
+# Commit count as the build number: monotonic, needs no state, and tells two
+# builds of the same version apart in a bug report. Zero when the source came
+# from a tarball rather than a clone, or from a shallow CI checkout.
+BUILD="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 0)"
+YEAR="$(date +%Y)"
 
 BUILD_DIR="$ROOT/.build/$CONFIG"
 APP="$ROOT/dist/$APP_NAME.app"
@@ -18,7 +23,7 @@ APP="$ROOT/dist/$APP_NAME.app"
 echo "==> Building ($CONFIG)"
 swift build -c "$CONFIG" --package-path "$ROOT"
 
-echo "==> Assembling $APP"
+echo "==> Assembling $APP ($VERSION build $BUILD)"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
@@ -35,7 +40,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleExecutable</key><string>$APP_NAME</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
-    <key>CFBundleVersion</key><string>$VERSION</string>
+    <key>CFBundleVersion</key><string>$BUILD</string>
+    <key>NSHumanReadableCopyright</key><string>Copyright © $YEAR Claude Bridge contributors. MIT licensed.</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <!-- Menu bar only: no Dock icon, no main window. -->
     <key>LSUIElement</key><true/>

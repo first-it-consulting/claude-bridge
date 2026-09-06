@@ -44,6 +44,10 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
+        with:
+          # build-app.sh derives the bundle's build number from the commit
+          # count, which a shallow checkout would report as 1.
+          fetch-depth: 0
 
       # Proves the release path keeps working on every change, rather than
       # discovering it is broken at tag time.

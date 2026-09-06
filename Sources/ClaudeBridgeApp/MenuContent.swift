@@ -46,6 +46,10 @@ struct MenuContent: View {
 
         Divider()
 
+        Button("About Claude Bridge") {
+            AppInfo.showAboutPanel()
+        }
+
         Button("Settings…") {
             openWindow(id: WindowID.settings)
             NSApp.activate(ignoringOtherApps: true)

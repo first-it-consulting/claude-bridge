@@ -32,7 +32,7 @@ body:
     id: version
     attributes:
       label: Claude Bridge version
-      description: Menu bar ▸ Settings, or the version of the DMG you installed.
+      description: 'Menu bar ▸ About Claude Bridge, e.g. "0.1.0 (12)".' 
     validations:
       required: true
 

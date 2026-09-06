@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **About Claude Bridge** in the menu bar, showing the version and build number,
+  the licence, a link to the repository, and a note that the project is not
+  affiliated with Anthropic. The build number is the commit count, so two builds
+  of the same version can be told apart in a bug report.
+
 ## [0.1.0] - 2026-09-06
 
 First release.
