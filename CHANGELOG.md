@@ -16,9 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Silicon, so it could not launch on an Intel Mac at all. CI now fails if either
   architecture is missing from the packaged app.
 
-## [0.1.0] - 2026-09-06
+## 0.1.0 - 2026-09-06 — withdrawn
 
-First release.
+Withdrawn shortly after publication: the build was arm64 only and would not
+launch on an Intel Mac. The release and its tag were deleted so nobody
+downloads it. Everything below shipped in 0.1.1 instead.
 
 ### Added
 
@@ -59,5 +61,4 @@ First release.
   configured, so macOS asks for confirmation on first launch.
 
 [Unreleased]: https://github.com/first-it-consulting/claude-bridge/compare/v0.1.1...HEAD
-[0.1.1]: https://github.com/first-it-consulting/claude-bridge/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/first-it-consulting/claude-bridge/releases/tag/v0.1.0
+[0.1.1]: https://github.com/first-it-consulting/claude-bridge/releases/tag/v0.1.1
