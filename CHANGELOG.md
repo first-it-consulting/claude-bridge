@@ -7,15 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- An app icon, drawn by `scripts/make-icon.swift` and simplified at small sizes
-  rather than downsampled, so it stays legible at 16pt in a Finder list.
-- **About Claude Bridge** in the menu bar, showing the version and build number,
-  the licence, a link to the repository, and a note that the project is not
-  affiliated with Anthropic. The build number is the commit count, so two builds
-  of the same version can be told apart in a bug report.
-
 ## [0.1.0] - 2026-09-06
 
 First release.
@@ -42,6 +33,12 @@ First release.
 - `claude-bridged`, the same server without the UI, sharing the app's profiles.
 - Backend credentials stored in the login keychain rather than the settings
   file.
+- An app icon, drawn by `scripts/make-icon.swift` and simplified at small sizes
+  rather than downsampled, so it stays legible at 16pt in a Finder list.
+- **About Claude Bridge** in the menu bar, showing the version and build number,
+  the licence, a link to the repository, and a note that the project is not
+  affiliated with Anthropic. The build number is the commit count, so two builds
+  of the same version can be told apart in a bug report.
 
 ### Notes
 
