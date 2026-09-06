@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-06
+
 ### Fixed
 
 - Release builds are now universal. 0.1.0 shipped an arm64-only binary, because
@@ -56,5 +58,6 @@ First release.
 - Release builds are not notarised until Apple Developer credentials are
   configured, so macOS asks for confirmation on first launch.
 
-[Unreleased]: https://github.com/first-it-consulting/claude-bridge/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/first-it-consulting/claude-bridge/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/first-it-consulting/claude-bridge/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/first-it-consulting/claude-bridge/releases/tag/v0.1.0
