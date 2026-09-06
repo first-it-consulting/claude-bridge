@@ -1,5 +1,10 @@
 # Claude Bridge
 
+[![CI](https://github.com/first-it-consulting/claude-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/first-it-consulting/claude-bridge/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/first-it-consulting/claude-bridge?sort=semver)](https://github.com/first-it-consulting/claude-bridge/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)
+
 A macOS menu bar app that lets **Claude Desktop** talk to local and remote LLMs —
 Ollama, LM Studio, llama.cpp, vLLM, OpenRouter, Groq, LiteLLM, or anything else
 that speaks the OpenAI or Anthropic API. Switch providers from the status bar.
@@ -66,15 +71,33 @@ Haiku and a large one to Opus gets you sensible routing for free.
 
 ## Install
 
+Download the latest `.dmg` from [Releases](https://github.com/first-it-consulting/claude-bridge/releases/latest),
+open it, and drag **Claude Bridge** to Applications.
+
+Releases are not notarised yet, so macOS refuses them on first launch. Either
+right-click the app and choose **Open**, or clear the quarantine flag:
+
 ```sh
-git clone https://github.com/YOU/claude-bridge.git
+xattr -d com.apple.quarantine "/Applications/Claude Bridge.app"
+```
+
+Verify the download if you like — each release publishes a checksum next to the
+DMG:
+
+```sh
+shasum -a 256 -c ClaudeBridge-<version>.dmg.sha256
+```
+
+### From source
+
+```sh
+git clone https://github.com/first-it-consulting/claude-bridge.git
 cd claude-bridge
 make app
 open dist/"Claude Bridge.app"
 ```
 
-The build is ad-hoc signed, which is enough to run locally. Distributing it to
-other machines needs a Developer ID identity and notarisation.
+Needs a Swift 6 toolchain (Xcode 16 or later).
 
 ## Setup
 
@@ -180,6 +203,11 @@ make app        # build dist/Claude Bridge.app
 make run        # rebuild and relaunch
 ```
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the commit convention, how to debug
+against a running Claude Desktop, and the release process. [CLAUDE.md](CLAUDE.md)
+is the architecture orientation, including a list of constraints that each cost
+a real debugging session.
+
 Live tests against a real backend are opt-in:
 
 ```sh
@@ -219,6 +247,11 @@ of silence on a stream. Backends that send SSE keep-alive pings avoid this;
 Claude Desktop's `inferenceStreamIdleTimeoutSec` raises the limit further, but
 only when pings are actually arriving.
 
+## Contributing
+
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+Security reports go through [private advisories](SECURITY.md), not public issues.
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
