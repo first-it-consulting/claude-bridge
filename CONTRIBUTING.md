@@ -88,6 +88,14 @@ place the disagreement is written down.
 If you change what the bridge sends to Claude Desktop, say how you verified it
 against a running Claude Desktop, not just against the test suite.
 
+## Dependencies
+
+Dependabot opens pull requests weekly for GitHub Actions and Swift packages.
+Patch and minor updates merge themselves once the required checks pass; major
+updates wait for a human, and get a comment saying so. `main` requires the
+build, package and commit-message checks to pass, which is what makes
+auto-merge wait for CI rather than merging immediately.
+
 ## Releasing
 
 Maintainers only. Releases are cut from a tag; the workflow refuses to publish

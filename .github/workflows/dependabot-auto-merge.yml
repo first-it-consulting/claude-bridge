@@ -1,0 +1,40 @@
+name: Dependabot auto-merge
+
+on: pull_request_target
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: Enable auto-merge
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      # `pull_request_target` runs with write access, so this workflow must
+      # never check out or execute the pull request's code. It only reads
+      # metadata and asks GitHub to queue the merge.
+      - name: Read update metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Majors can change behaviour the test suite does not cover, so they stay
+      # for a human. Patch and minor merge themselves once the required checks
+      # pass — auto-merge queues the merge rather than performing it now, so CI
+      # still gates it.
+      - name: Queue merge for patch and minor updates
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: gh pr merge --auto --squash "${{ github.event.pull_request.html_url }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Leave a note on major updates
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        run: |
+          gh pr comment "${{ github.event.pull_request.html_url }}" --body \
+            "Major version bump — left for review rather than auto-merged. CI results above show whether it builds and packages."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
