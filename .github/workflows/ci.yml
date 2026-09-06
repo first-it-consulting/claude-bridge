@@ -19,7 +19,7 @@ jobs:
     name: Build and test
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Show toolchain
         run: swift --version && xcodebuild -version
@@ -43,7 +43,7 @@ jobs:
     name: Package app
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           # build-app.sh derives the bundle's build number from the commit
           # count, which a shallow checkout would report as 1.
@@ -74,7 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           # check-commits.sh walks the range, so it needs both endpoints.
           fetch-depth: 0
