@@ -1,0 +1,370 @@
+import AppKit
+import BridgeCore
+import Foundation
+import Observation
+import SwiftUI
+
+/// Everything the menu bar and windows read from, and the only place that
+/// coordinates the server, the profile store, and Claude Desktop's config.
+@MainActor
+@Observable
+final class AppState {
+
+    // MARK: - Persisted state
+
+    var settings: BridgeSettings {
+        didSet { scheduleSave() }
+    }
+
+    // MARK: - Live state
+
+    private(set) var serverRunning = false
+    private(set) var serverError: String?
+    private(set) var health: HealthChecker.Health = .unknown
+    private(set) var claudeStatus: ClaudeDesktopConfig.Status
+    private(set) var entries: [LogEntry] = []
+    /// Set when a background action wants to say something in the menu.
+    var notice: Notice?
+
+    struct Notice: Identifiable, Equatable {
+        enum Kind { case info, warning, error }
+        let id = UUID()
+        var kind: Kind
+        var text: String
+    }
+
+    // MARK: - Collaborators
+
+    private let store = ProfileStore()
+    private let claudeConfig = ClaudeDesktopConfig()
+    private let log: RequestLog
+    private let router: BridgeRouter
+    private let server: BridgeServer
+
+    private var saveTask: Task<Void, Never>?
+    private var logObservation: UUID?
+
+    init() {
+        let loaded = ProfileStore().load()
+        self.settings = loaded
+        self.claudeStatus = ClaudeDesktopConfig().status()
+
+        let profile = loaded.activeProfile ?? Profile(name: "Empty")
+        let key = profile.backend.keychainAccount.flatMap { Keychain.get(account: $0) }
+        let log = RequestLog(capacity: loaded.logCapacity)
+        self.log = log
+        self.router = BridgeRouter(
+            profile: profile, apiKey: key, token: loaded.gatewayToken, log: log
+        )
+        self.server = BridgeServer(router: router)
+
+        observeLog()
+
+        // Not a `.task` on any view: the menu bar app has no window open at
+        // launch, so a view-attached task would leave the bridge stopped until
+        // the user opened Settings.
+        Task { await onLaunch() }
+    }
+
+    // MARK: - Lifecycle
+
+    func onLaunch() async {
+        if settings.startServerAtLaunch {
+            await startServer()
+        }
+        // A profile with no models serves an empty picker, which reads as the
+        // bridge being broken. Fill it in on first run rather than making the
+        // user find the Discover button.
+        if let profile = settings.activeProfile, profile.models.isEmpty, profile.autoDiscoverModels {
+            await discoverModels(for: profile.id)
+        }
+        await refreshHealth()
+    }
+
+    func onQuit() async {
+        await server.shutdown()
+        try? store.save(settings)
+    }
+
+    // MARK: - Server
+
+    func startServer() async {
+        serverError = nil
+        do {
+            try await server.start(port: settings.port)
+            serverRunning = true
+        } catch {
+            serverRunning = false
+            serverError = error.localizedDescription
+        }
+    }
+
+    func stopServer() async {
+        try? await server.stop()
+        serverRunning = false
+    }
+
+    func toggleServer() async {
+        if serverRunning { await stopServer() } else { await startServer() }
+    }
+
+    /// Applies a port change, which needs a rebind and a rewrite of Claude
+    /// Desktop's config if the bridge is currently wired up.
+    func applyPortChange(to port: UInt16) async {
+        settings.port = port
+        if serverRunning {
+            await startServer()
+        }
+        if claudeStatus.bridgeEntryApplied {
+            connectClaudeDesktop(announce: false)
+        }
+    }
+
+    // MARK: - Profiles
+
+    var activeProfile: Profile? { settings.activeProfile }
+
+    func selectProfile(_ profile: Profile) async {
+        settings.activeProfileID = profile.id
+        await pushProfileToRouter()
+        await refreshHealth()
+        // The model picker is populated once, when Claude Desktop launches, so
+        // a profile switch is not visible in it until the app restarts.
+        if claudeStatus.bridgeEntryApplied, claudeConfig.isClaudeRunning() {
+            notice = Notice(
+                kind: .info,
+                text: "Switched to “\(profile.name)”. Restart Claude Desktop to refresh its model list."
+            )
+        }
+    }
+
+    func upsert(profile: Profile) {
+        if let index = settings.profiles.firstIndex(where: { $0.id == profile.id }) {
+            settings.profiles[index] = profile
+        } else {
+            settings.profiles.append(profile)
+        }
+        Task {
+            await pushProfileToRouter()
+            await refreshHealth()
+        }
+    }
+
+    func delete(profile: Profile) {
+        if let account = profile.backend.keychainAccount {
+            try? Keychain.remove(account: account)
+        }
+        settings.profiles.removeAll { $0.id == profile.id }
+        if settings.activeProfileID == profile.id {
+            settings.activeProfileID = settings.profiles.first?.id
+            Task { await pushProfileToRouter() }
+        }
+    }
+
+    func duplicate(profile: Profile) {
+        var copy = profile
+        copy.id = UUID()
+        copy.name = profile.name + " copy"
+        // A duplicate must not share the original's keychain item, or deleting
+        // one would pull the key out from under the other.
+        if let source = profile.backend.keychainAccount {
+            let account = UUID().uuidString
+            copy.backend.keychainAccount = account
+            if let secret = Keychain.get(account: source) {
+                try? Keychain.set(secret, account: account)
+            }
+        }
+        copy.models = profile.models.map { model in
+            var m = model
+            m.id = UUID()
+            return m
+        }
+        settings.profiles.append(copy)
+    }
+
+    private func pushProfileToRouter() async {
+        guard let profile = settings.activeProfile else { return }
+        let key = profile.backend.keychainAccount.flatMap { Keychain.get(account: $0) }
+        await router.update(profile: profile, apiKey: key, token: settings.gatewayToken)
+    }
+
+    // MARK: - Health and discovery
+
+    func refreshHealth() async {
+        guard let profile = settings.activeProfile else {
+            health = .unknown
+            return
+        }
+        health = .checking
+        let key = profile.backend.keychainAccount.flatMap { Keychain.get(account: $0) }
+        health = await HealthChecker.check(backend: profile.backend, apiKey: key)
+    }
+
+    func health(of profile: Profile) async -> HealthChecker.Health {
+        let key = profile.backend.keychainAccount.flatMap { Keychain.get(account: $0) }
+        return await HealthChecker.check(backend: profile.backend, apiKey: key)
+    }
+
+    /// Asks the backend what it serves and adds anything not already listed.
+    /// Existing entries keep their tier and label, so a refresh never undoes
+    /// the user's mapping.
+    @discardableResult
+    func discoverModels(for profileID: UUID) async -> Int {
+        guard let index = settings.profiles.firstIndex(where: { $0.id == profileID }) else { return 0 }
+        let profile = settings.profiles[index]
+        let key = profile.backend.keychainAccount.flatMap { Keychain.get(account: $0) }
+
+        let discovered = (try? await ModelCatalog.discover(backend: profile.backend, apiKey: key)) ?? []
+        guard !discovered.isEmpty else { return 0 }
+
+        var models = settings.profiles[index].models
+        let known = Set(models.map(\.upstreamID))
+        var added = 0
+
+        for model in discovered where !known.contains(model.id) {
+            models.append(ModelMapping(
+                upstreamID: model.id,
+                displayName: model.displayName,
+                tier: model.suggestedTier ?? ModelCatalog.inferTier(from: model.id)
+            ))
+            added += 1
+        }
+
+        // Claude Desktop needs a default per tier to route sub-agent work; pick
+        // one if the user has not.
+        for tier in FamilyTier.allCases where !models.contains(where: { $0.tier == tier && $0.isFamilyDefault }) {
+            if let first = models.firstIndex(where: { $0.tier == tier }) {
+                models[first].isFamilyDefault = true
+            }
+        }
+
+        settings.profiles[index].models = models
+        if settings.activeProfileID == profileID || settings.activeProfileID == nil {
+            await pushProfileToRouter()
+        }
+        return added
+    }
+
+    // MARK: - Claude Desktop wiring
+
+    func refreshClaudeStatus() {
+        claudeStatus = claudeConfig.status()
+    }
+
+    /// Points Claude Desktop at the bridge.
+    func connectClaudeDesktop(announce: Bool = true) {
+        do {
+            let previous = try claudeConfig.applyBridgeEntry(
+                port: settings.port, apiKey: settings.gatewayToken
+            )
+            // Only remember the first thing we displaced, so repeated connects
+            // do not overwrite the user's original configuration with our own.
+            if let previous, settings.previousClaudeEntryID == nil {
+                settings.previousClaudeEntryID = previous
+            }
+            refreshClaudeStatus()
+
+            if claudeStatus.managedProfilePresent {
+                notice = Notice(kind: .warning, text: """
+                    Written, but this Mac has an MDM configuration profile for Claude Desktop, \
+                    which takes precedence. The bridge will not be used until that profile is removed.
+                    """)
+            } else if announce {
+                notice = Notice(kind: .info, text: "Claude Desktop is pointed at the bridge. Restart it to take effect.")
+            }
+        } catch {
+            notice = Notice(kind: .error, text: error.localizedDescription)
+        }
+    }
+
+    /// Puts Claude Desktop back on whatever it used before the bridge.
+    func disconnectClaudeDesktop() {
+        do {
+            try claudeConfig.restoreAppliedEntry(id: settings.previousClaudeEntryID)
+            settings.previousClaudeEntryID = nil
+            refreshClaudeStatus()
+            notice = Notice(kind: .info, text: "Restored Claude Desktop's previous configuration. Restart it to take effect.")
+        } catch {
+            notice = Notice(kind: .error, text: error.localizedDescription)
+        }
+    }
+
+    /// Quits and reopens Claude Desktop. Destructive enough to confirm first,
+    /// which the caller does.
+    func restartClaudeDesktop() async {
+        do {
+            try await claudeConfig.restartClaudeDesktop()
+            refreshClaudeStatus()
+        } catch {
+            notice = Notice(kind: .error, text: "Could not restart Claude Desktop: \(error.localizedDescription)")
+        }
+    }
+
+    var claudeDesktopIsRunning: Bool { claudeConfig.isClaudeRunning() }
+
+    // MARK: - Log
+
+    private func observeLog() {
+        Task { [log] in
+            let token = await log.observe { snapshot in
+                Task { @MainActor [weak self] in self?.entries = snapshot }
+            }
+            await MainActor.run { self.logObservation = token }
+        }
+    }
+
+    func clearLog() {
+        Task { await log.clear() }
+    }
+
+    var captureBodies = false {
+        didSet {
+            let value = captureBodies
+            Task { [log] in await log.setCaptureBodies(value) }
+        }
+    }
+
+    // MARK: - Saving
+
+    /// Debounced: the settings object is rewritten on every keystroke in the
+    /// editor, and each write is an atomic file replace.
+    private func scheduleSave() {
+        saveTask?.cancel()
+        let snapshot = settings
+        saveTask = Task {
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+            try? store.save(snapshot)
+            await pushProfileToRouter()
+        }
+    }
+
+    // MARK: - Derived display
+
+    enum ConnectionState {
+        case stopped
+        case running
+        case failing
+
+        var symbolName: String {
+            switch self {
+            case .stopped: return "bolt.horizontal"
+            case .running: return "bolt.horizontal.fill"
+            case .failing: return "bolt.horizontal.circle"
+            }
+        }
+    }
+
+    var connectionState: ConnectionState {
+        guard serverRunning else { return .stopped }
+        if case .unreachable = health { return .failing }
+        if serverError != nil { return .failing }
+        return .running
+    }
+
+    var statusSummary: String {
+        guard serverRunning else { return serverError ?? "Bridge stopped" }
+        guard let profile = activeProfile else { return "No profile" }
+        return "\(profile.name) · \(health.summary)"
+    }
+}
