@@ -34,7 +34,10 @@ struct Daemon {
         }
 
         let port = options.port ?? settings.port
-        let apiKey = profile.backend.keychainAccount.flatMap { Keychain.get(account: $0) }
+        var apiKey: String?
+        if let account = profile.backend.keychainAccount {
+            apiKey = await Keychain.get(account: account)
+        }
         let log = RequestLog(capacity: settings.logCapacity)
         let router = BridgeRouter(
             profile: profile, apiKey: apiKey, token: settings.gatewayToken, log: log

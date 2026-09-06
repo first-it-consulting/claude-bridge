@@ -9,10 +9,58 @@ import Security
 public enum Keychain {
     public static let service = "com.claudebridge.backend-key"
 
-    public static func set(_ secret: String, account: String) throws {
+    /// Keychain calls are synchronous and can block indefinitely: reading an
+    /// item created under a different code signature makes macOS put up an
+    /// authorisation prompt, and `SecItemCopyMatching` does not return until
+    /// the user answers it. On the main actor that freezes the entire app, so
+    /// every call is routed off it through this queue.
+    ///
+    /// Development builds hit this constantly, because an ad-hoc signature
+    /// changes on every rebuild and the item no longer looks like it belongs
+    /// to the same app.
+    private static let queue = DispatchQueue(label: "com.claudebridge.keychain")
+
+    public static func get(account: String) async -> String? {
+        await withCheckedContinuation { continuation in
+            queue.async { continuation.resume(returning: getBlocking(account: account)) }
+        }
+    }
+
+    public static func set(_ secret: String, account: String) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                do {
+                    try setBlocking(secret, account: account)
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    public static func remove(account: String) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                do {
+                    try removeBlocking(account: account)
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    // MARK: - Blocking primitives
+    //
+    // Safe to call directly only from somewhere that can afford to wait — the
+    // headless daemon at startup, say. Never from the main actor.
+
+    public static func setBlocking(_ secret: String, account: String) throws {
         // A delete-then-add is simpler than SecItemUpdate's attribute dance and
         // is idempotent for a single-value item.
-        try? remove(account: account)
+        try? removeBlocking(account: account)
         guard !secret.isEmpty else { return }
 
         let query: [String: Any] = [
@@ -26,7 +74,7 @@ public enum Keychain {
         guard status == errSecSuccess else { throw KeychainError(status: status) }
     }
 
-    public static func get(account: String) -> String? {
+    public static func getBlocking(account: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -40,7 +88,7 @@ public enum Keychain {
         return String(data: data, encoding: .utf8)
     }
 
-    public static func remove(account: String) throws {
+    public static func removeBlocking(account: String) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

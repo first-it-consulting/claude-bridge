@@ -50,11 +50,13 @@ final class AppState {
         self.claudeStatus = ClaudeDesktopConfig().status()
 
         let profile = loaded.activeProfile ?? Profile(name: "Empty")
-        let key = profile.backend.keychainAccount.flatMap { Keychain.get(account: $0) }
         let log = RequestLog(capacity: loaded.logCapacity)
         self.log = log
+        // No credential yet on purpose. Reading it can block on a keychain
+        // authorisation prompt, and doing that here would stall the app before
+        // it ever binds a port; `onLaunch` loads it off the main actor.
         self.router = BridgeRouter(
-            profile: profile, apiKey: key, token: loaded.gatewayToken, log: log
+            profile: profile, apiKey: nil, token: loaded.gatewayToken, log: log
         )
         self.server = BridgeServer(router: router)
 
@@ -69,9 +71,14 @@ final class AppState {
     // MARK: - Lifecycle
 
     func onLaunch() async {
+        // Bind first. Loading the backend credential can sit behind a keychain
+        // authorisation prompt the user may never answer, and the bridge being
+        // up matters more than it having a credential the instant it starts —
+        // a request made in the gap fails visibly in the log.
         if settings.startServerAtLaunch {
             await startServer()
         }
+        await pushProfileToRouter()
         // A profile with no models serves an empty picker, which reads as the
         // bridge being broken. Fill it in on first run rather than making the
         // user find the Discover button.
@@ -152,7 +159,7 @@ final class AppState {
 
     func delete(profile: Profile) {
         if let account = profile.backend.keychainAccount {
-            try? Keychain.remove(account: account)
+            Task { try? await Keychain.remove(account: account) }
         }
         settings.profiles.removeAll { $0.id == profile.id }
         if settings.activeProfileID == profile.id {
@@ -170,8 +177,10 @@ final class AppState {
         if let source = profile.backend.keychainAccount {
             let account = UUID().uuidString
             copy.backend.keychainAccount = account
-            if let secret = Keychain.get(account: source) {
-                try? Keychain.set(secret, account: account)
+            Task {
+                if let secret = await Keychain.get(account: source) {
+                    try? await Keychain.set(secret, account: account)
+                }
             }
         }
         copy.models = profile.models.map { model in
@@ -184,7 +193,7 @@ final class AppState {
 
     private func pushProfileToRouter() async {
         guard let profile = settings.activeProfile else { return }
-        let key = profile.backend.keychainAccount.flatMap { Keychain.get(account: $0) }
+        let key = await apiKey(for: profile)
         await router.update(profile: profile, apiKey: key, token: settings.gatewayToken)
     }
 
@@ -196,13 +205,17 @@ final class AppState {
             return
         }
         health = .checking
-        let key = profile.backend.keychainAccount.flatMap { Keychain.get(account: $0) }
-        health = await HealthChecker.check(backend: profile.backend, apiKey: key)
+        health = await HealthChecker.check(backend: profile.backend, apiKey: await apiKey(for: profile))
     }
 
     func health(of profile: Profile) async -> HealthChecker.Health {
-        let key = profile.backend.keychainAccount.flatMap { Keychain.get(account: $0) }
-        return await HealthChecker.check(backend: profile.backend, apiKey: key)
+        await HealthChecker.check(backend: profile.backend, apiKey: await apiKey(for: profile))
+    }
+
+    /// The backend credential, or nil when the profile has none.
+    private func apiKey(for profile: Profile) async -> String? {
+        guard let account = profile.backend.keychainAccount else { return nil }
+        return await Keychain.get(account: account)
     }
 
     /// What a discovery pass found.
@@ -233,7 +246,7 @@ final class AppState {
             return DiscoveryResult(failed: true)
         }
         let profile = settings.profiles[index]
-        let key = profile.backend.keychainAccount.flatMap { Keychain.get(account: $0) }
+        let key = await apiKey(for: profile)
 
         let discovered = (try? await ModelCatalog.discover(backend: profile.backend, apiKey: key)) ?? []
         guard !discovered.isEmpty else {

@@ -102,7 +102,11 @@ struct ProfileEditor: View {
         }
         .formStyle(.grouped)
         .task(id: profile.id) {
-            apiKey = profile.backend.keychainAccount.flatMap { Keychain.get(account: $0) } ?? ""
+            if let account = profile.backend.keychainAccount {
+                apiKey = await Keychain.get(account: account) ?? ""
+            } else {
+                apiKey = ""
+            }
             await test()
         }
         // Editing where the backend lives invalidates what it was known to
@@ -124,7 +128,8 @@ struct ProfileEditor: View {
         // Give the profile a keychain slot the first time a key is entered.
         let account = profile.backend.keychainAccount ?? UUID().uuidString
         profile.backend.keychainAccount = account
-        try? Keychain.set(apiKey, account: account)
+        let secret = apiKey
+        Task { try? await Keychain.set(secret, account: account) }
     }
 
     private func invalidateDiscovery() {
