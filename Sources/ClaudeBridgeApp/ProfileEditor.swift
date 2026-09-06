@@ -9,7 +9,7 @@ struct ProfileEditor: View {
     @State private var apiKey: String = ""
     @State private var health: HealthChecker.Health = .unknown
     @State private var discovering = false
-    @State private var discoveryResult: String?
+    @State private var discovery: AppState.DiscoveryResult?
 
     var body: some View {
         Form {
@@ -60,13 +60,16 @@ struct ProfileEditor: View {
             }
 
             Section {
-                ModelTable(profile: $profile)
+                if let unavailable = discovery?.unavailable, !unavailable.isEmpty {
+                    unavailableBanner(unavailable)
+                }
+                ModelTable(profile: $profile, served: state.servedModels(for: profile.id))
             } header: {
                 HStack {
                     Text("Models")
                     Spacer()
-                    if let discoveryResult {
-                        Text(discoveryResult)
+                    if let summary = discoverySummary {
+                        Text(summary)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -102,6 +105,10 @@ struct ProfileEditor: View {
             apiKey = profile.backend.keychainAccount.flatMap { Keychain.get(account: $0) } ?? ""
             await test()
         }
+        // Editing where the backend lives invalidates what it was known to
+        // serve; keeping the old set would flag exactly the wrong rows.
+        .onChange(of: profile.backend.baseURL) { _, _ in invalidateDiscovery() }
+        .onChange(of: profile.backend.kind) { _, _ in invalidateDiscovery() }
     }
 
     private var pathHint: String {
@@ -120,6 +127,11 @@ struct ProfileEditor: View {
         try? Keychain.set(apiKey, account: account)
     }
 
+    private func invalidateDiscovery() {
+        discovery = nil
+        state.invalidateDiscovery(for: profile.id)
+    }
+
     private func test() async {
         health = .checking
         health = await state.health(of: profile)
@@ -127,13 +139,45 @@ struct ProfileEditor: View {
 
     private func discover() async {
         discovering = true
-        discoveryResult = nil
-        let added = await state.discoverModels(for: profile.id)
+        discovery = nil
+        discovery = await state.discoverModels(for: profile.id)
         discovering = false
-        discoveryResult = added == 0
-            ? "Nothing new"
-            : "Added \(added) model\(added == 1 ? "" : "s")"
         await test()
+    }
+
+    private var discoverySummary: String? {
+        guard let discovery else { return nil }
+        if discovery.failed { return "Backend listed no models" }
+        if discovery.added == 0 { return "Nothing new" }
+        return "Added \(discovery.added) model\(discovery.added == 1 ? "" : "s")"
+    }
+
+    /// Models configured here that the backend does not serve.
+    ///
+    /// Almost always the result of pointing a profile at a different URL: the
+    /// previous backend's models stay behind and get advertised to Claude
+    /// Desktop, which then sends this backend a model ID it has never heard of.
+    @ViewBuilder
+    private func unavailableBanner(_ unavailable: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(
+                "\(unavailable.count) model\(unavailable.count == 1 ? " is" : "s are") not served by this backend",
+                systemImage: "exclamationmark.triangle.fill"
+            )
+            .foregroundStyle(.orange)
+
+            Text(unavailable.prefix(6).joined(separator: ", ")
+                 + (unavailable.count > 6 ? ", and \(unavailable.count - 6) more" : ""))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Button("Remove Them") {
+                state.removeUnavailableModels(for: profile.id)
+                discovery?.unavailable = []
+            }
+            .controlSize(.small)
+        }
+        .padding(.vertical, 4)
     }
 }
 
@@ -167,6 +211,9 @@ struct HealthBadge: View {
 /// comparing tiers across models.
 private struct ModelTable: View {
     @Binding var profile: Profile
+    /// Model IDs the backend confirmed. `nil` when discovery has not run or
+    /// the backend has no model endpoint, in which case nothing is flagged.
+    var served: Set<String>?
 
     var body: some View {
         if profile.models.isEmpty {
@@ -181,11 +228,20 @@ private struct ModelTable: View {
                 header
                 Divider()
                 ForEach($profile.models) { $model in
-                    ModelRow(model: $model, profile: $profile)
+                    ModelRow(
+                        model: $model,
+                        profile: $profile,
+                        isUnavailable: isUnavailable(model)
+                    )
                     Divider()
                 }
             }
         }
+    }
+
+    private func isUnavailable(_ model: ModelMapping) -> Bool {
+        guard let served, !model.upstreamID.isEmpty else { return false }
+        return !served.contains(model.upstreamID)
     }
 
     private var header: some View {
@@ -206,6 +262,7 @@ private struct ModelTable: View {
 private struct ModelRow: View {
     @Binding var model: ModelMapping
     @Binding var profile: Profile
+    var isUnavailable = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -213,10 +270,17 @@ private struct ModelRow: View {
                 .labelsHidden()
                 .frame(width: 26)
 
-            TextField("model-id", text: $model.upstreamID)
-                .textFieldStyle(.plain)
-                .autocorrectionDisabled()
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 4) {
+                if isUnavailable {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .help("This backend did not list this model")
+                }
+                TextField("model-id", text: $model.upstreamID)
+                    .textFieldStyle(.plain)
+                    .autocorrectionDisabled()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             TextField(model.upstreamID, text: Binding(
                 get: { model.displayName ?? "" },

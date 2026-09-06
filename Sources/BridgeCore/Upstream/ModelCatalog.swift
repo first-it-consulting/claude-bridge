@@ -114,6 +114,70 @@ public enum ModelCatalog {
         }
     }
 
+    /// The outcome of reconciling a configured list against a backend.
+    public struct Reconciliation: Sendable, Equatable {
+        public var models: [ModelMapping]
+        public var added: Int
+        /// Configured models the backend did not list. Reported rather than
+        /// removed: a backend with no `/v1/models` endpoint serves models it
+        /// never advertises, and a hand-maintained list must survive.
+        public var unavailable: [String]
+    }
+
+    /// Merges what a backend reports into a configured model list.
+    ///
+    /// Existing entries keep their tier, label, and flags, so re-running
+    /// discovery never undoes the user's mapping. New models are appended.
+    /// Models the backend did not list are reported, which is what catches a
+    /// profile whose base URL was changed: the previous backend's models
+    /// otherwise stay behind and get advertised to Claude Desktop.
+    public static func reconcile(
+        existing: [ModelMapping],
+        discovered: [DiscoveredModel]
+    ) -> Reconciliation {
+        var models = existing
+        let known = Set(existing.map(\.upstreamID))
+        let served = Set(discovered.map(\.id))
+        var added = 0
+
+        for model in discovered where !known.contains(model.id) {
+            models.append(ModelMapping(
+                upstreamID: model.id,
+                displayName: model.displayName,
+                tier: model.suggestedTier ?? inferTier(from: model.id)
+            ))
+            added += 1
+        }
+
+        // Blank rows are ones the user is still typing, not stale entries.
+        let unavailable = models
+            .map(\.upstreamID)
+            .filter { !$0.isEmpty && !served.contains($0) }
+
+        return Reconciliation(models: withFamilyDefaults(models), added: added, unavailable: unavailable)
+    }
+
+    /// Ensures every tier that has models has exactly one default.
+    ///
+    /// A tier with no default leaves Claude Desktop with nothing to route that
+    /// family's work to — sub-agents in particular go to Haiku.
+    public static func withFamilyDefaults(_ models: [ModelMapping]) -> [ModelMapping] {
+        var models = models
+        for tier in FamilyTier.allCases {
+            let inTier = models.indices.filter { models[$0].tier == tier }
+            guard !inTier.isEmpty else { continue }
+            let defaults = inTier.filter { models[$0].isFamilyDefault }
+            if defaults.isEmpty {
+                models[inTier[0]].isFamilyDefault = true
+            } else {
+                // Keep only the first; several defaults in one tier is
+                // ambiguous and Claude Desktop just takes the first anyway.
+                for index in defaults.dropFirst() { models[index].isFamilyDefault = false }
+            }
+        }
+        return models
+    }
+
     /// A first guess at which Claude family a model should stand in for, based
     /// on its parameter count. Only a default — the point of the tier is to
     /// tell Claude Desktop which sub-agent work to route where, and the user

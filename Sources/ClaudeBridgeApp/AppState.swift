@@ -205,44 +205,78 @@ final class AppState {
         return await HealthChecker.check(backend: profile.backend, apiKey: key)
     }
 
-    /// Asks the backend what it serves and adds anything not already listed.
-    /// Existing entries keep their tier and label, so a refresh never undoes
-    /// the user's mapping.
+    /// What a discovery pass found.
+    struct DiscoveryResult: Equatable {
+        var added: Int = 0
+        /// Configured models the backend did not list. Left in place rather
+        /// than deleted, because a backend with no `/v1/models` endpoint
+        /// legitimately lists nothing while its models still work.
+        var unavailable: [String] = []
+        var failed = false
+    }
+
+    /// Models the active backend confirmed it serves, keyed by profile.
+    /// Populated by discovery and used to flag stale rows in the editor.
+    private(set) var servedModelIDs: [UUID: Set<String>] = [:]
+
+    func servedModels(for profileID: UUID) -> Set<String>? { servedModelIDs[profileID] }
+
+    /// Reconciles the profile's model list with what the backend reports.
+    ///
+    /// Adds anything new, keeps existing entries' tier and label, and records
+    /// which configured models the backend did not list — which is how a
+    /// profile whose URL was changed ends up advertising the old backend's
+    /// models to Claude Desktop.
     @discardableResult
-    func discoverModels(for profileID: UUID) async -> Int {
-        guard let index = settings.profiles.firstIndex(where: { $0.id == profileID }) else { return 0 }
+    func discoverModels(for profileID: UUID) async -> DiscoveryResult {
+        guard let index = settings.profiles.firstIndex(where: { $0.id == profileID }) else {
+            return DiscoveryResult(failed: true)
+        }
         let profile = settings.profiles[index]
         let key = profile.backend.keychainAccount.flatMap { Keychain.get(account: $0) }
 
         let discovered = (try? await ModelCatalog.discover(backend: profile.backend, apiKey: key)) ?? []
-        guard !discovered.isEmpty else { return 0 }
-
-        var models = settings.profiles[index].models
-        let known = Set(models.map(\.upstreamID))
-        var added = 0
-
-        for model in discovered where !known.contains(model.id) {
-            models.append(ModelMapping(
-                upstreamID: model.id,
-                displayName: model.displayName,
-                tier: model.suggestedTier ?? ModelCatalog.inferTier(from: model.id)
-            ))
-            added += 1
+        guard !discovered.isEmpty else {
+            // Unreachable, or a backend that does not implement the endpoint.
+            // Either way the existing list is the best information available,
+            // so nothing is flagged.
+            servedModelIDs[profileID] = nil
+            return DiscoveryResult(failed: true)
         }
 
-        // Claude Desktop needs a default per tier to route sub-agent work; pick
-        // one if the user has not.
-        for tier in FamilyTier.allCases where !models.contains(where: { $0.tier == tier && $0.isFamilyDefault }) {
-            if let first = models.firstIndex(where: { $0.tier == tier }) {
-                models[first].isFamilyDefault = true
-            }
-        }
+        let reconciled = ModelCatalog.reconcile(
+            existing: settings.profiles[index].models,
+            discovered: discovered
+        )
+        settings.profiles[index].models = reconciled.models
+        servedModelIDs[profileID] = Set(discovered.map(\.id))
 
-        settings.profiles[index].models = models
+        let result = DiscoveryResult(added: reconciled.added, unavailable: reconciled.unavailable)
         if settings.activeProfileID == profileID || settings.activeProfileID == nil {
             await pushProfileToRouter()
         }
-        return added
+        return result
+    }
+
+    /// Drops every model the last discovery said the backend does not serve.
+    /// Only ever called explicitly, so a hand-maintained list is never lost to
+    /// a backend that happened to be down.
+    func removeUnavailableModels(for profileID: UUID) {
+        guard let index = settings.profiles.firstIndex(where: { $0.id == profileID }),
+              let served = servedModelIDs[profileID] else { return }
+
+        var models = settings.profiles[index].models
+        models.removeAll { !$0.upstreamID.isEmpty && !served.contains($0.upstreamID) }
+        settings.profiles[index].models = ModelCatalog.withFamilyDefaults(models)
+        Task { await pushProfileToRouter() }
+    }
+
+    /// Forgets what a backend was last known to serve.
+    ///
+    /// Called when the base URL or protocol changes: the recorded set belongs
+    /// to the old backend, and keeping it would flag exactly the wrong rows.
+    func invalidateDiscovery(for profileID: UUID) {
+        servedModelIDs[profileID] = nil
     }
 
     // MARK: - Claude Desktop wiring
