@@ -191,7 +191,14 @@ public struct Profile: Codable, Hashable, Identifiable, Sendable {
         self.autoDiscoverModels = autoDiscoverModels
     }
 
-    public var enabledModels: [ModelMapping] { models.filter(\.enabled) }
+    /// The models the bridge will actually serve.
+    ///
+    /// A row whose ID is still blank is one the user is part-way through
+    /// adding. Serving it would advertise a model with an empty id to Claude
+    /// Desktop and put a nameless entry in its picker.
+    public var enabledModels: [ModelMapping] {
+        models.filter { $0.enabled && !$0.upstreamID.trimmingCharacters(in: .whitespaces).isEmpty }
+    }
 
     /// The mapping Claude Desktop should land on when it opens the picker:
     /// the flagged family default, else the first enabled model.

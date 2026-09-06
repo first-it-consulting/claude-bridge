@@ -109,3 +109,39 @@ struct ModelCatalogTests {
     }
 }
 
+@Suite("Served model list")
+struct ServedModelsTests {
+
+    @Test("a half-typed row is not advertised to Claude Desktop")
+    func skipsBlankRows() {
+        let profile = Profile(name: "p", models: [
+            ModelMapping(upstreamID: "qwen3:8b"),
+            ModelMapping(upstreamID: "   "),
+            ModelMapping(upstreamID: ""),
+        ])
+        #expect(profile.enabledModels.map(\.upstreamID) == ["qwen3:8b"])
+
+        let response = ModelCatalog.modelsResponse(for: profile)
+        #expect(response["data"]?.arrayValue?.count == 1)
+    }
+
+    @Test("disabled models are not served")
+    func skipsDisabled() {
+        let profile = Profile(name: "p", models: [
+            ModelMapping(upstreamID: "a", enabled: false),
+            ModelMapping(upstreamID: "b"),
+        ])
+        #expect(profile.enabledModels.map(\.upstreamID) == ["b"])
+    }
+
+    @Test("only one model per tier is flagged as the family default")
+    func oneDefaultPerTier() {
+        let profile = Profile(name: "p", models: [
+            ModelMapping(upstreamID: "a", tier: .sonnet, isFamilyDefault: true),
+            ModelMapping(upstreamID: "b", tier: .sonnet, isFamilyDefault: true),
+        ])
+        let flagged = ModelCatalog.modelsResponse(for: profile)["data"]?.arrayValue?
+            .filter { $0["is_family_default"]?.boolValue == true }
+        #expect(flagged?.count == 1)
+    }
+}
