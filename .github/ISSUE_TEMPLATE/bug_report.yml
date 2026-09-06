@@ -1,0 +1,91 @@
+name: Bug report
+description: Something does not work
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Two things resolve most reports in this project faster than anything
+        else: the Claude Desktop discovery log line, and whether the bridge
+        itself answers. Both are asked for below.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Add an Ollama profile pointing at …
+        2. Point Claude Desktop at the bridge, restart it
+        3. …
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Claude Bridge version
+      description: Menu bar ▸ Settings, or the version of the DMG you installed.
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+    validations:
+      required: true
+
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend
+      options:
+        - Ollama
+        - LM Studio
+        - llama.cpp
+        - vLLM
+        - LiteLLM
+        - OpenRouter
+        - Groq
+        - Together
+        - Anthropic API
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: bridge-health
+    attributes:
+      label: Bridge health
+      description: |
+        Output of, with your port if you changed it:
+        `curl -s http://127.0.0.1:8788/health`
+      render: shell
+
+  - type: textarea
+    id: claude-log
+    attributes:
+      label: Claude Desktop discovery line
+      description: |
+        Only if the problem involves Claude Desktop. From
+        `grep "Model discovery" ~/Library/Logs/Claude-3p/main.log | tail -3`.
+        The `found` and `picker` counts separate a bridge problem from a
+        Claude Desktop filtering problem.
+      render: shell
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: |
+        Request log entries are useful here. Turn on "Capture bodies" in the log
+        window, reproduce, and paste the failing request — with any API key
+        removed.

@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A new push supersedes an in-flight run for the same ref.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Show toolchain
+        run: swift --version && xcodebuild -version
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Build
+        run: swift build --build-tests
+
+      # The live-backend suites stay skipped here: they need a running model
+      # server, and CLAUDE_BRIDGE_LIVE_BACKEND being unset is what skips them.
+      - name: Test
+        run: swift test --skip-build
+
+  package:
+    name: Package app
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+
+      # Proves the release path keeps working on every change, rather than
+      # discovering it is broken at tag time.
+      - name: Build unsigned DMG
+        run: ./scripts/make-dmg.sh
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}
+
+      - name: Verify the app bundle launches its checks
+        run: |
+          codesign --verify --deep --strict --verbose=2 "dist/Claude Bridge.app"
+          test -f dist/ClaudeBridge-$(cat VERSION).dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClaudeBridge-dmg-${{ github.sha }}
+          path: |
+            dist/*.dmg
+            dist/*.dmg.sha256
+          retention-days: 14
+
+  commits:
+    name: Commit messages
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # check-commits.sh walks the range, so it needs both endpoints.
+          fetch-depth: 0
+
+      - name: Check Conventional Commits
+        run: ./scripts/check-commits.sh "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"

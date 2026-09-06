@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/first-it-consulting/claude-bridge/security/advisories/new
+    about: Report privately, not as a public issue.
+  - name: Claude Desktop third-party inference documentation
+    url: https://claude.com/docs/third-party/claude-desktop/gateway
+    about: Anthropic's reference for the gateway mode this app implements.

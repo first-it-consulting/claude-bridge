@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, without the leading v (dry run, no release published)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Releasing $version"
+
+      # A tag that disagrees with VERSION would ship a DMG whose filename and
+      # Info.plist do not match the release it is attached to.
+      - name: Check tag matches VERSION
+        run: |
+          expected="$(cat VERSION)"
+          actual="${{ steps.version.outputs.version }}"
+          if [ "$expected" != "$actual" ]; then
+            echo "::error::VERSION is $expected but the release is $actual. Update VERSION and CHANGELOG.md, then retag."
+            exit 1
+          fi
+
+      - name: Check CHANGELOG has an entry
+        run: ./scripts/changelog-section.sh "${{ steps.version.outputs.version }}" > /dev/null
+
+      - name: Test
+        run: swift test
+
+      - name: Build, sign and package
+        run: ./scripts/make-dmg.sh
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+
+      - name: Compose release notes
+        id: notes
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          {
+            ./scripts/changelog-section.sh "$version"
+            echo
+            if [ -z "${{ secrets.MACOS_CERTIFICATE }}" ]; then
+              cat <<'EOF'
+          ### Installing
+
+          This build is **not notarised**, so macOS will refuse it on first launch.
+          Right-click the app in Applications and choose **Open**, or run:
+
+          ```sh
+          xattr -d com.apple.quarantine "/Applications/Claude Bridge.app"
+          ```
+          EOF
+            fi
+            echo
+            echo '### Checksum'
+            echo '```'
+            cat "dist/ClaudeBridge-$version.dmg.sha256" | awk '{print $1"  ClaudeBridge-'"$version"'.dmg"}'
+            echo '```'
+          } > release-notes.md
+          cat release-notes.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClaudeBridge-${{ steps.version.outputs.version }}
+          path: |
+            dist/*.dmg
+            dist/*.dmg.sha256
+
+      - name: Publish GitHub Release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          gh release create "${{ github.ref_name }}" \
+            --title "Claude Bridge $version" \
+            --notes-file release-notes.md \
+            "dist/ClaudeBridge-$version.dmg" \
+            "dist/ClaudeBridge-$version.dmg.sha256"
