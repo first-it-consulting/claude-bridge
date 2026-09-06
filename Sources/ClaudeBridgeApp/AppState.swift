@@ -316,6 +316,19 @@ final class AppState {
         Task { await pushProfileToRouter() }
     }
 
+    /// Records what a backend serves without altering the profile.
+    ///
+    /// Used when a profile is merely opened: the editor needs the list to
+    /// offer it as a dropdown, but opening a profile should not quietly
+    /// rewrite its models.
+    func refreshServedModels(for profileID: UUID) async {
+        guard let profile = settings.profiles.first(where: { $0.id == profileID }) else { return }
+        let key = await apiKey(for: profile)
+        let discovered = (try? await ModelCatalog.discover(backend: profile.backend, apiKey: key)) ?? []
+        guard !discovered.isEmpty else { return }
+        servedModelIDs[profileID] = Set(discovered.map(\.id))
+    }
+
     /// Forgets what a backend was last known to serve.
     ///
     /// Called when the base URL or protocol changes: the recorded set belongs

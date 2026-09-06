@@ -95,13 +95,20 @@ struct ProfileEditor: View {
                         }
                     }
                     .disabled(discovering)
-                    Button {
-                        // Marked manual so a later discovery pass does not
-                        // prune a model this backend serves but never lists.
-                        profile.models.append(ModelMapping(upstreamID: "", origin: .manual))
+                    Menu {
+                        let known = state.servedModels(for: profile.id) ?? []
+                        if !known.isEmpty {
+                            Section("Served by this backend") {
+                                ForEach(known.sorted(), id: \.self) { id in
+                                    Button(id) { addModel(id) }
+                                }
+                            }
+                        }
+                        Button("Custom…") { addModel("") }
                     } label: {
                         Label("Add", systemImage: "plus")
                     }
+                    .fixedSize()
                 }
             } footer: {
                 Text("""
@@ -124,6 +131,7 @@ struct ProfileEditor: View {
                 apiKey = ""
             }
             await test()
+            await state.refreshServedModels(for: profile.id)
         }
         // Editing where the backend lives invalidates what it was known to
         // serve; keeping the old set would flag exactly the wrong rows.
@@ -146,6 +154,20 @@ struct ProfileEditor: View {
         profile.backend.keychainAccount = account
         let secret = apiKey
         Task { try? await Keychain.set(secret, account: account) }
+    }
+
+    /// Appends a row.
+    ///
+    /// Marked manual so a later discovery pass does not prune a model this
+    /// backend serves but never lists. The tier is a fresh guess from the name;
+    /// pointing a second tier at an already-listed model is the common reason
+    /// to add one by hand, and the user changes it in the row.
+    private func addModel(_ id: String) {
+        profile.models.append(ModelMapping(
+            upstreamID: id,
+            tier: id.isEmpty ? .sonnet : ModelCatalog.inferTier(from: id),
+            origin: .manual
+        ))
     }
 
     private func invalidateDiscovery() {
@@ -254,7 +276,8 @@ private struct ModelTable: View {
                     ModelRow(
                         model: $model,
                         profile: $profile,
-                        isUnavailable: isUnavailable(model)
+                        isUnavailable: isUnavailable(model),
+                        choices: served ?? []
                     )
                     Divider()
                 }
@@ -286,6 +309,8 @@ private struct ModelRow: View {
     @Binding var model: ModelMapping
     @Binding var profile: Profile
     var isUnavailable = false
+    /// Model IDs the backend reported, offered as a dropdown on the ID field.
+    var choices: Set<String> = []
 
     var body: some View {
         HStack(spacing: 8) {
@@ -302,6 +327,22 @@ private struct ModelRow: View {
                 TextField("model-id", text: $model.upstreamID)
                     .textFieldStyle(.plain)
                     .autocorrectionDisabled()
+                if !choices.isEmpty {
+                    // Picking beats typing: these names are long, exact, and
+                    // easy to get subtly wrong.
+                    Menu {
+                        ForEach(choices.sorted(), id: \.self) { id in
+                            Button(id) { model.upstreamID = id }
+                        }
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 

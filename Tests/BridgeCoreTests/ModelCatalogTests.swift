@@ -72,7 +72,7 @@ struct ModelCatalogTests {
         #expect(result.removed == ["Ornith-1.5-35B-A3B-MLX"])
     }
 
-    @Test("a blank row being typed is neither pruned nor flagged")
+    @Test("a blank row is cleared rather than reported as stale")
     func ignoresBlankRows() {
         let result = ModelCatalog.reconcile(
             existing: [ModelMapping(upstreamID: "")],
@@ -80,7 +80,7 @@ struct ModelCatalogTests {
         )
         #expect(result.unavailable.isEmpty)
         #expect(result.removed.isEmpty)
-        #expect(result.models.contains { $0.upstreamID.isEmpty })
+        #expect(!result.models.contains { $0.upstreamID.isEmpty })
     }
 
     @Test("every populated tier ends up with exactly one default")
@@ -209,3 +209,22 @@ struct SharedModelTests {
     }
 }
 
+@Suite("Blank row cleanup")
+struct BlankRowTests {
+    @Test("rows left without an ID are cleared on reconciliation")
+    func dropsBlankRows() {
+        let existing = [
+            ModelMapping(upstreamID: "a:1", origin: .discovered),
+            ModelMapping(upstreamID: "", tier: .haiku, origin: .manual),
+            ModelMapping(upstreamID: "   ", origin: .manual),
+        ]
+        let result = ModelCatalog.reconcile(
+            existing: existing,
+            discovered: [ModelCatalog.DiscoveredModel(id: "a:1")]
+        )
+        #expect(result.models.map(\.upstreamID) == ["a:1"])
+        // Not reported as stale — they were never real entries.
+        #expect(result.removed.isEmpty)
+        #expect(result.unavailable.isEmpty)
+    }
+}

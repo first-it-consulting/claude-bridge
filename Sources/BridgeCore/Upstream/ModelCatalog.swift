@@ -145,9 +145,13 @@ public enum ModelCatalog {
         let known = Set(existing.map(\.upstreamID))
         let served = Set(discovered.map(\.id))
 
-        // A blank row is one the user is still typing, not a stale entry.
+        func isBlank(_ model: ModelMapping) -> Bool {
+            model.upstreamID.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+        // A blank row was never a real entry, so it is cleared rather than
+        // reported as something the backend stopped serving.
         func isStale(_ model: ModelMapping) -> Bool {
-            !model.upstreamID.isEmpty && !served.contains(model.upstreamID)
+            !isBlank(model) && !served.contains(model.upstreamID)
         }
 
         let removed = existing.filter { isStale($0) && $0.isDiscoveryOwned }
@@ -156,7 +160,7 @@ public enum ModelCatalog {
         // A row left blank is one nobody finished filling in. Reconciliation
         // runs at launch, so nothing here is mid-edit, and an empty row is only
         // clutter — it is never served.
-        var models = existing.filter { !isStale($0) || !$0.isDiscoveryOwned }
+        var models = existing.filter { !isBlank($0) && (!isStale($0) || !$0.isDiscoveryOwned) }
         var added = 0
         for model in discovered where !known.contains(model.id) {
             models.append(ModelMapping(
