@@ -40,6 +40,18 @@ struct ProfileEditor: View {
                     SecureField("API key", text: $apiKey)
                         .onSubmit(saveKey)
                         .onChange(of: apiKey) { _, _ in saveKey() }
+                } else if profile.backend.keychainAccount != nil {
+                    // A leftover from when this profile did use a key. It is
+                    // never read while auth is off, but it is still sitting in
+                    // the keychain.
+                    LabeledContent("Stored key") {
+                        HStack {
+                            Text("Unused — this backend needs no credential")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Forget") { state.forgetStoredKey(for: profile.id) }
+                        }
+                    }
                 }
 
                 Picker("Reasoning output", selection: $profile.backend.reasoningMode) {
@@ -104,7 +116,9 @@ struct ProfileEditor: View {
         }
         .formStyle(.grouped)
         .task(id: profile.id) {
-            if let account = profile.backend.keychainAccount {
+            // Same reasoning as AppState.apiKey(for:): do not prompt for a
+            // secret this profile has no use for.
+            if profile.backend.authScheme != .none, let account = profile.backend.keychainAccount {
                 apiKey = await Keychain.get(account: account) ?? ""
             } else {
                 apiKey = ""

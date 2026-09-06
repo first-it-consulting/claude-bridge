@@ -70,6 +70,26 @@ public enum Keychain {
             kSecValueData as String: Data(secret.utf8),
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
         ]
+        // Deliberately no ACL widening here.
+        //
+        // macOS scopes an item's decrypt ACL to the creating binary and pins a
+        // PartitionID to its cdhash, which is why a rebuilt app is asked to
+        // authorise again: an ad-hoc signature changes every build, so the item
+        // no longer looks like it belongs to the same program. Passing an
+        // unrecognised "ACL" key to SecItemAdd does not change this — the call
+        // still returns errSecSuccess, because unknown attribute keys are
+        // silently dropped, and the resulting ACL is byte-identical.
+        //
+        // Widening it for real means kSecAttrAccess with a SecAccess whose
+        // trusted-application list is nil, which lets *any* process running as
+        // this user read the stored provider keys without a prompt. That trades
+        // away the only thing that makes keychain storage worth doing over a
+        // plain file, so it is not done.
+        //
+        // The prompt is a development artefact: a stable Developer ID signature
+        // makes it go away. Meanwhile the app simply does not read a credential
+        // it has no use for — see AppState.apiKey(for:).
+
         let status = SecItemAdd(query as CFDictionary, nil)
         guard status == errSecSuccess else { throw KeychainError(status: status) }
     }

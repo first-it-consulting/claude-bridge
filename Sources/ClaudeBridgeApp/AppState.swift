@@ -195,6 +195,17 @@ final class AppState {
         settings.profiles.append(copy)
     }
 
+    /// Removes a profile's stored credential and its keychain slot.
+    func forgetStoredKey(for profileID: UUID) {
+        guard let index = settings.profiles.firstIndex(where: { $0.id == profileID }),
+              let account = settings.profiles[index].backend.keychainAccount else { return }
+        settings.profiles[index].backend.keychainAccount = nil
+        Task {
+            try? await Keychain.remove(account: account)
+            await pushProfileToRouter()
+        }
+    }
+
     private func pushProfileToRouter() async {
         guard let profile = settings.activeProfile else { return }
         let key = await apiKey(for: profile)
@@ -216,9 +227,17 @@ final class AppState {
         await HealthChecker.check(backend: profile.backend, apiKey: await apiKey(for: profile))
     }
 
-    /// The backend credential, or nil when the profile has none.
+    /// The backend credential, or nil when the profile does not use one.
+    ///
+    /// The auth scheme is checked before the keychain is touched. A profile
+    /// that once had a key and was later switched to no-auth still carries the
+    /// keychain account, and reading it would put up an authorisation prompt to
+    /// fetch a secret that is then never sent anywhere — which is exactly what
+    /// a local Ollama or LM Studio profile looks like after being pointed at a
+    /// keyed backend for a while.
     private func apiKey(for profile: Profile) async -> String? {
-        guard let account = profile.backend.keychainAccount else { return nil }
+        guard profile.backend.authScheme != .none,
+              let account = profile.backend.keychainAccount else { return nil }
         return await Keychain.get(account: account)
     }
 
