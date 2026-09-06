@@ -1,3 +1,5 @@
+<img src="Resources/icon-512.png" alt="" width="112" align="right">
+
 # Claude Bridge
 
 [![CI](https://github.com/first-it-consulting/claude-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/first-it-consulting/claude-bridge/actions/workflows/ci.yml)

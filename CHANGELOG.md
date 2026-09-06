@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- An app icon, drawn by `scripts/make-icon.swift` and simplified at small sizes
+  rather than downsampled, so it stays legible at 16pt in a Finder list.
 - **About Claude Bridge** in the menu bar, showing the version and build number,
   the licence, a link to the repository, and a note that the project is not
   affiliated with Anthropic. The build number is the commit count, so two builds
