@@ -209,39 +209,41 @@ public struct Profile: Codable, Hashable, Identifiable, Sendable {
         public var mapping: ModelMapping
     }
 
-    /// The served list, with an id that is unique across entries.
+    /// The served list, with ids Claude Desktop will actually accept.
     ///
-    /// The same backend model may legitimately back several tiers — one loaded
-    /// model is often all a machine has VRAM for, and every tier should still
-    /// route somewhere. Claude Desktop keys its picker on the model id, so the
-    /// duplicates need distinct ids: the first entry keeps the bare model name
-    /// and the rest are suffixed with their tier. `BridgeRouter` maps the
-    /// suffixed id back to the real one before calling the backend.
+    /// Claude Desktop filters the model list twice, and the two filters
+    /// disagree. Discovery keeps a model when its id looks Anthropic-ish *or*
+    /// it carries `anthropic_family_tier`. The picker that the discovered list
+    /// then feeds re-filters on the **id alone**, tier field ignored, against a
+    /// vendor denylist — `qwen`, `llama`, `gemma`, `gpt`, `mistral` and some
+    /// forty more. A local model therefore passes discovery and vanishes before
+    /// it reaches the picker, which surfaces as "your organization's model list
+    /// hasn't loaded yet" with `picker = 0 (empty)` in Claude Desktop's log.
+    ///
+    /// That second filter does have one unconditional pass: an id matching
+    /// `^(sonnet|opus|haiku|fable|mythos)(-[\d.]+)?$` is accepted without
+    /// further checks. So models are advertised under their tier name, with a
+    /// numeric suffix for the second and later model in a tier. The real name
+    /// still reaches the user, because the picker labels each entry with the
+    /// `display_name` from the same response.
+    ///
+    /// This also gives one backend model a distinct id per tier for free, which
+    /// is what lets a single loaded model back Haiku, Sonnet and Opus at once.
     public var servedModels: [ServedModel] {
-        var used: Set<String> = []
+        var countPerTier: [FamilyTier: Int] = [:]
+
         return enabledModels.map { mapping in
-            var advertised = mapping.upstreamID
-            if used.contains(advertised) {
-                advertised = "\(mapping.upstreamID)#\(mapping.tier.rawValue)"
-                // Two rows for the same model *and* tier: rare, but the id
-                // still has to be unique or one of them is unreachable.
-                var counter = 2
-                while used.contains(advertised) {
-                    advertised = "\(mapping.upstreamID)#\(mapping.tier.rawValue)-\(counter)"
-                    counter += 1
-                }
-            }
-            used.insert(advertised)
+            let used = countPerTier[mapping.tier, default: 0]
+            countPerTier[mapping.tier] = used + 1
+            // "sonnet", then "sonnet-2", "sonnet-3", … all of which satisfy the
+            // tier-alias pattern.
+            let advertised = used == 0 ? mapping.tier.rawValue : "\(mapping.tier.rawValue)-\(used + 1)"
 
             let name: String
             if let explicit = mapping.displayName?.trimmingCharacters(in: .whitespaces), !explicit.isEmpty {
                 name = explicit
-            } else if advertised == mapping.upstreamID {
-                name = mapping.upstreamID
             } else {
-                // Distinguish the alias in the picker, where two rows would
-                // otherwise read identically.
-                name = "\(mapping.upstreamID) (\(mapping.tier.displayName))"
+                name = mapping.upstreamID
             }
             return ServedModel(advertisedID: advertised, displayName: name, mapping: mapping)
         }

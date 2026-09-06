@@ -30,12 +30,29 @@ sequence. OpenAI backends speak `POST /chat/completions` with `tool_calls` and a
 different stream shape. Claude Bridge translates both directions, including
 streaming, parallel tool calls, and images.
 
-**Getting non-Claude models into the picker.** Claude Desktop filters discovered
-models down to ones whose IDs look like Claude models, which would hide every
-local model you have. The documented way around it is the `anthropic_family_tier`
-field on the `/v1/models` response. Claude Bridge tags every model it serves, so
-`qwen3-coder:30b` shows up in the picker under the tier you assign — without
-having to rename it to `claude-sonnet-5`.
+**Getting non-Claude models into the picker.** Claude Desktop filters the model
+list twice, and the two filters disagree. Discovery keeps a model whose id looks
+Anthropic-ish *or* that carries an `anthropic_family_tier` field. The picker then
+re-filters that list on the **id alone** — tier field ignored — against a vendor
+denylist covering `qwen`, `llama`, `gemma`, `gpt`, `mistral` and around forty
+more. So a local model passes discovery and disappears before it is selectable:
+
+```
+[custom-3p] Model discovery: 4 found in 146ms; picker = 0 (empty)
+```
+
+That second filter accepts one form unconditionally: an id matching
+`^(sonnet|opus|haiku|fable|mythos)(-[\d.]+)?$`. Claude Bridge therefore
+advertises models under their **tier name** — `sonnet`, `haiku`, `opus`, then
+`sonnet-2`, `sonnet-3` for further models in a tier — and puts the real model
+name in `display_name`, which is what the picker actually labels each entry
+with. You see `qwen3-coder-next:latest`; Claude Desktop sees `sonnet-2`; the
+bridge maps it back on the way to your backend.
+
+A side effect worth having: because the id is derived from the tier rather than
+the model, one backend model can back Haiku, Sonnet and Opus at the same time.
+On a machine with only enough VRAM for one loaded model, point all three tiers
+at it and every kind of work routes somewhere.
 
 The tier is not just cosmetic: Claude Desktop routes sub-agent work to Haiku and
 main-conversation work to whatever you selected, so mapping a small fast model to
@@ -184,9 +201,12 @@ swift test
 
 ## Troubleshooting
 
-**The model picker is empty.** Claude Desktop only reads the model list at
-launch. Restart it. If it is still empty, check the bridge is running and that
-the profile has enabled models.
+**The model picker is empty**, or Claude Desktop says your organization's model
+list hasn't loaded. Claude Desktop only reads the model list at launch, so
+restart it first. If it is still empty, check
+`~/Library/Logs/Claude-3p/main.log` for the discovery line: `picker = 0 (empty)`
+after a non-zero "found" count means the ids were rejected by the picker filter,
+and `found` of zero means the bridge was unreachable or has no enabled models.
 
 **Requests fail with 401.** The gateway token in Claude Desktop's config is
 stale. Use "Point Claude Desktop at the Bridge" again, then restart it.

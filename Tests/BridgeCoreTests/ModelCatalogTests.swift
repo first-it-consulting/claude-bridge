@@ -159,23 +159,49 @@ struct SharedModelTests {
         ])
     }
 
-    @Test("each tier gets a distinct advertised id")
-    func uniqueAdvertisedIDs() {
+    /// The pattern Claude Desktop accepts unconditionally, from its own
+    /// source: `^(sonnet|opus|haiku|fable|mythos)(-[\d.]+)?$`.
+    static func isTierAlias(_ id: String) -> Bool {
+        id.wholeMatch(of: /^(sonnet|opus|haiku|fable|mythos)(-[\d.]+)?$/) != nil
+    }
+
+    /// The vendor denylist Claude Desktop applies to every other id. Any of
+    /// these substrings and the model never reaches the picker, whatever its
+    /// anthropic_family_tier says.
+    static let vendorDenylist = ["qwen", "llama", "gemma", "gpt", "mistral", "deepseek", "glm"]
+
+    @Test("advertised ids are tier aliases, which is the only form the picker accepts")
+    func advertisedIDsPassClaudeDesktopFilter() {
         let served = sharedProfile().servedModels
         let ids = served.map(\.advertisedID)
         #expect(Set(ids).count == ids.count)
-        // The first keeps the bare name so the common single-tier case is
-        // unaffected.
-        #expect(ids[0] == "qwen3-coder-next:latest")
-        #expect(ids.contains("qwen3-coder-next:latest#haiku"))
-        #expect(ids.contains("qwen3-coder-next:latest#opus"))
+
+        for id in ids {
+            #expect(Self.isTierAlias(id), "\(id) would be rejected by the picker")
+            let lower = id.lowercased()
+            #expect(!Self.vendorDenylist.contains { lower.contains($0) })
+        }
     }
 
-    @Test("aliases are labelled so the picker does not show three identical rows")
-    func aliasLabels() {
-        let served = sharedProfile().servedModels
-        #expect(served[0].displayName == "qwen3-coder-next:latest")
-        #expect(served[1].displayName == "qwen3-coder-next:latest (Haiku)")
+    @Test("the real model name still reaches the picker as the display name")
+    func displayNameCarriesTheRealModel() {
+        let data = ModelCatalog.modelsResponse(for: sharedProfile())["data"]!.arrayValue!
+        for entry in data {
+            #expect(entry["display_name"]?.stringValue == "qwen3-coder-next:latest")
+        }
+    }
+
+    @Test("several models in one tier get numbered ids")
+    func numberedWithinTier() {
+        let profile = Profile(name: "p", models: [
+            ModelMapping(upstreamID: "a", tier: .sonnet),
+            ModelMapping(upstreamID: "b", tier: .sonnet),
+            ModelMapping(upstreamID: "c", tier: .sonnet),
+        ])
+        #expect(profile.servedModels.map(\.advertisedID) == ["sonnet", "sonnet-2", "sonnet-3"])
+        for entry in profile.servedModels {
+            #expect(Self.isTierAlias(entry.advertisedID))
+        }
     }
 
     @Test("every tier is served and flagged as its own default")
@@ -191,21 +217,36 @@ struct SharedModelTests {
         let router = BridgeRouter(
             profile: sharedProfile(), apiKey: nil, token: "", log: RequestLog()
         )
-        let haiku = await router.resolveModel(requested: "qwen3-coder-next:latest#haiku")
+        let haiku = await router.resolveModel(requested: "haiku")
         #expect(haiku?.upstreamID == "qwen3-coder-next:latest")
         #expect(haiku?.tier == .haiku)
 
+        let opus = await router.resolveModel(requested: "opus")
+        #expect(opus?.tier == .opus)
+
+        // Claude Desktop also sends the real name back in some flows.
         let plain = await router.resolveModel(requested: "qwen3-coder-next:latest")
         #expect(plain?.tier == .sonnet)
     }
 
-    @Test("an explicit label wins over the generated one")
+    @Test("an explicit label wins over the model name")
     func explicitLabel() {
         let profile = Profile(name: "p", models: [
             ModelMapping(upstreamID: "m", tier: .sonnet),
             ModelMapping(upstreamID: "m", displayName: "Fast lane", tier: .haiku),
         ])
         #expect(profile.servedModels[1].displayName == "Fast lane")
+    }
+
+    @Test("a numbered alias resolves to the right model")
+    func numberedAliasResolves() async {
+        let profile = Profile(name: "p", models: [
+            ModelMapping(upstreamID: "first", tier: .sonnet),
+            ModelMapping(upstreamID: "second", tier: .sonnet),
+        ])
+        let router = BridgeRouter(profile: profile, apiKey: nil, token: "", log: RequestLog())
+        #expect(await router.resolveModel(requested: "sonnet-2")?.upstreamID == "second")
+        #expect(await router.resolveModel(requested: "sonnet")?.upstreamID == "first")
     }
 }
 

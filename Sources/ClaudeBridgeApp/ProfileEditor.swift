@@ -112,10 +112,13 @@ struct ProfileEditor: View {
                 }
             } footer: {
                 Text("""
-                    Tier decides which Claude family a model stands in for, which is how a \
-                    non-Claude model ID reaches Claude Desktop's picker at all — and which \
-                    work Claude Desktop routes to it. Sub-agents go to Haiku; the main \
-                    conversation goes to whichever tier you pick in the app.
+                    Tier decides which Claude family a model stands in for. It is also what \
+                    gets the model into Claude Desktop at all: models are advertised under \
+                    their tier name, because Claude Desktop rejects ids containing a \
+                    non-Anthropic vendor name. Your model's real name is what you see in \
+                    the picker. Tier also decides the work it gets — sub-agents go to Haiku, \
+                    the main conversation to whichever tier you select in Claude Desktop. \
+                    The same model can back several tiers.
                     """)
                 .font(.caption)
                 .foregroundStyle(.secondary)
