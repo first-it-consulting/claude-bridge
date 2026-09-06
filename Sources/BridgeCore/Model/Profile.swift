@@ -103,6 +103,17 @@ public struct Backend: Codable, Hashable, Sendable {
     }
 }
 
+/// Where a model entry came from, which decides whether discovery may remove
+/// it again.
+public enum ModelOrigin: String, Codable, Sendable {
+    /// Listed by the backend. Discovery owns it, so discovery may drop it when
+    /// the backend stops listing it.
+    case discovered
+    /// Typed in by hand. Kept even when the backend does not advertise it —
+    /// some backends serve models their `/v1/models` never mentions.
+    case manual
+}
+
 /// One backend model, and how it should appear in Claude Desktop's picker.
 public struct ModelMapping: Codable, Hashable, Identifiable, Sendable {
     public var id: UUID
@@ -120,6 +131,9 @@ public struct ModelMapping: Codable, Hashable, Identifiable, Sendable {
     /// When false the bridge strips `tools` from the request instead of
     /// letting the backend reject it.
     public var supportsTools: Bool
+    /// Optional so settings written before this existed still decode; those
+    /// entries were all produced by discovery, so they are treated as such.
+    public var origin: ModelOrigin?
 
     public init(
         id: UUID = UUID(),
@@ -129,7 +143,8 @@ public struct ModelMapping: Codable, Hashable, Identifiable, Sendable {
         isFamilyDefault: Bool = false,
         enabled: Bool = true,
         maxOutputTokens: Int? = nil,
-        supportsTools: Bool = true
+        supportsTools: Bool = true,
+        origin: ModelOrigin? = nil
     ) {
         self.id = id
         self.upstreamID = upstreamID
@@ -139,7 +154,11 @@ public struct ModelMapping: Codable, Hashable, Identifiable, Sendable {
         self.enabled = enabled
         self.maxOutputTokens = maxOutputTokens
         self.supportsTools = supportsTools
+        self.origin = origin
     }
+
+    /// Whether discovery is allowed to remove this entry.
+    public var isDiscoveryOwned: Bool { (origin ?? .discovered) == .discovered }
 
     public var label: String {
         if let name = displayName?.trimmingCharacters(in: .whitespaces), !name.isEmpty {

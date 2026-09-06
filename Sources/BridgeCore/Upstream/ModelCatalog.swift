@@ -118,43 +118,59 @@ public enum ModelCatalog {
     public struct Reconciliation: Sendable, Equatable {
         public var models: [ModelMapping]
         public var added: Int
-        /// Configured models the backend did not list. Reported rather than
-        /// removed: a backend with no `/v1/models` endpoint serves models it
-        /// never advertises, and a hand-maintained list must survive.
+        /// Entries discovery had added before and the backend has stopped
+        /// listing. Dropped, because discovery owns them.
+        public var removed: [String]
+        /// Hand-added entries the backend does not list. Kept and reported:
+        /// some backends serve models their `/v1/models` never mentions.
         public var unavailable: [String]
     }
 
     /// Merges what a backend reports into a configured model list.
     ///
     /// Existing entries keep their tier, label, and flags, so re-running
-    /// discovery never undoes the user's mapping. New models are appended.
-    /// Models the backend did not list are reported, which is what catches a
-    /// profile whose base URL was changed: the previous backend's models
-    /// otherwise stay behind and get advertised to Claude Desktop.
+    /// discovery never undoes the user's mapping.
+    ///
+    /// Entries discovery added itself and the backend no longer lists are
+    /// dropped. That is what keeps a profile honest after its base URL changes:
+    /// the previous backend's models would otherwise stay behind and be
+    /// advertised to Claude Desktop, which would then ask this backend for a
+    /// model it has never heard of. Hand-added entries are never dropped —
+    /// some backends serve models their `/v1/models` never mentions — so those
+    /// are only reported.
     public static func reconcile(
         existing: [ModelMapping],
         discovered: [DiscoveredModel]
     ) -> Reconciliation {
-        var models = existing
         let known = Set(existing.map(\.upstreamID))
         let served = Set(discovered.map(\.id))
-        var added = 0
 
+        // A blank row is one the user is still typing, not a stale entry.
+        func isStale(_ model: ModelMapping) -> Bool {
+            !model.upstreamID.isEmpty && !served.contains(model.upstreamID)
+        }
+
+        let removed = existing.filter { isStale($0) && $0.isDiscoveryOwned }
+        let unavailable = existing.filter { isStale($0) && !$0.isDiscoveryOwned }
+
+        var models = existing.filter { !isStale($0) || !$0.isDiscoveryOwned }
+        var added = 0
         for model in discovered where !known.contains(model.id) {
             models.append(ModelMapping(
                 upstreamID: model.id,
                 displayName: model.displayName,
-                tier: model.suggestedTier ?? inferTier(from: model.id)
+                tier: model.suggestedTier ?? inferTier(from: model.id),
+                origin: .discovered
             ))
             added += 1
         }
 
-        // Blank rows are ones the user is still typing, not stale entries.
-        let unavailable = models
-            .map(\.upstreamID)
-            .filter { !$0.isEmpty && !served.contains($0) }
-
-        return Reconciliation(models: withFamilyDefaults(models), added: added, unavailable: unavailable)
+        return Reconciliation(
+            models: withFamilyDefaults(models),
+            added: added,
+            removed: removed.map(\.upstreamID),
+            unavailable: unavailable.map(\.upstreamID)
+        )
     }
 
     /// Ensures every tier that has models has exactly one default.

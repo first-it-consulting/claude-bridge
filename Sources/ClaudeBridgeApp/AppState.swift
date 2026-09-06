@@ -79,10 +79,14 @@ final class AppState {
             await startServer()
         }
         await pushProfileToRouter()
-        // A profile with no models serves an empty picker, which reads as the
-        // bridge being broken. Fill it in on first run rather than making the
-        // user find the Discover button.
-        if let profile = settings.activeProfile, profile.models.isEmpty, profile.autoDiscoverModels {
+        // Reconcile the active profile's models with what its backend currently
+        // serves on every launch, so repointing a profile at a new backend (or
+        // bringing one back up) prunes the old one's models instead of leaving
+        // them in the picker forever. This is what keeps a profile honest after
+        // its base URL changes: without it, only profiles with an empty model list
+        // ever auto-populate. An unreachable backend at launch is a no-op, so it
+        // just waits until the next time one is up. Skipped when discovery is off.
+        if let profile = settings.activeProfile, profile.autoDiscoverModels {
             await discoverModels(for: profile.id)
         }
         await refreshHealth()
@@ -221,8 +225,11 @@ final class AppState {
     /// What a discovery pass found.
     struct DiscoveryResult: Equatable {
         var added: Int = 0
-        /// Configured models the backend did not list. Left in place rather
-        /// than deleted, because a backend with no `/v1/models` endpoint
+        /// Entries discovery had added and the backend has stopped listing.
+        /// Already gone from the profile by the time this is returned.
+        var removed: [String] = []
+        /// Hand-added entries the backend does not list. Kept, and reported so
+        /// the editor can flag them: a backend with no `/v1/models` endpoint
         /// legitimately lists nothing while its models still work.
         var unavailable: [String] = []
         var failed = false
@@ -264,16 +271,22 @@ final class AppState {
         settings.profiles[index].models = reconciled.models
         servedModelIDs[profileID] = Set(discovered.map(\.id))
 
-        let result = DiscoveryResult(added: reconciled.added, unavailable: reconciled.unavailable)
+        let result = DiscoveryResult(
+            added: reconciled.added,
+            removed: reconciled.removed,
+            unavailable: reconciled.unavailable
+        )
         if settings.activeProfileID == profileID || settings.activeProfileID == nil {
             await pushProfileToRouter()
         }
         return result
     }
 
-    /// Drops every model the last discovery said the backend does not serve.
-    /// Only ever called explicitly, so a hand-maintained list is never lost to
-    /// a backend that happened to be down.
+    /// Drops the hand-added models the backend does not list.
+    ///
+    /// Discovery removes what it added itself; this covers entries the user
+    /// typed, which are kept by default because some backends serve models
+    /// their `/v1/models` never mentions.
     func removeUnavailableModels(for profileID: UUID) {
         guard let index = settings.profiles.firstIndex(where: { $0.id == profileID }),
               let served = servedModelIDs[profileID] else { return }

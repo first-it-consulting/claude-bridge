@@ -14,6 +14,7 @@ struct ModelCatalogTests {
         let result = ModelCatalog.reconcile(existing: [], discovered: discovered("a:1", "b:2"))
         #expect(result.added == 2)
         #expect(result.models.map(\.upstreamID) == ["a:1", "b:2"])
+        #expect(result.models.allSatisfy { $0.origin == .discovered })
         #expect(result.unavailable.isEmpty)
     }
 
@@ -28,31 +29,58 @@ struct ModelCatalogTests {
         #expect(result.added == 1)
     }
 
-    @Test("models the backend does not list are reported, not deleted")
-    func reportsStale() {
+    @Test("models discovery added and the backend dropped are removed")
+    func prunesDiscovered() {
         // The reported bug: a profile pointed at one backend, discovered, then
-        // pointed back at another keeps the first backend's models forever.
+        // pointed back keeps the first backend's models forever and advertises
+        // them to Claude Desktop.
         let existing = [
-            ModelMapping(upstreamID: "qwen3-coder-next:latest"),
-            ModelMapping(upstreamID: "Ornith-1.5-35B-A3B-MLX"),
+            ModelMapping(upstreamID: "qwen3-coder-next:latest", origin: .discovered),
+            ModelMapping(upstreamID: "Ornith-1.5-35B-A3B-MLX", origin: .discovered),
         ]
         let result = ModelCatalog.reconcile(
             existing: existing,
             discovered: discovered("qwen3-coder-next:latest", "gemma4:31b-mlx")
         )
-        #expect(result.unavailable == ["Ornith-1.5-35B-A3B-MLX"])
-        // Still present: removal is an explicit choice, because a backend with
-        // no /v1/models endpoint lists nothing while its models work fine.
-        #expect(result.models.contains { $0.upstreamID == "Ornith-1.5-35B-A3B-MLX" })
+        #expect(result.removed == ["Ornith-1.5-35B-A3B-MLX"])
+        #expect(!result.models.contains { $0.upstreamID == "Ornith-1.5-35B-A3B-MLX" })
+        #expect(result.unavailable.isEmpty)
     }
 
-    @Test("a blank row being typed is not treated as stale")
+    @Test("hand-added models are kept and only reported")
+    func keepsManual() {
+        // Some backends serve models their /v1/models never lists, so a typed
+        // entry must survive a discovery pass that does not mention it.
+        let existing = [ModelMapping(upstreamID: "private-model", origin: .manual)]
+        let result = ModelCatalog.reconcile(existing: existing, discovered: discovered("a:1"))
+
+        #expect(result.unavailable == ["private-model"])
+        #expect(result.removed.isEmpty)
+        #expect(result.models.contains { $0.upstreamID == "private-model" })
+    }
+
+    @Test("entries from settings written before origin existed are prunable")
+    func legacyEntriesAreDiscoveryOwned() {
+        // Every model in an older settings file was put there by discovery, so
+        // treating an absent origin as manual would strand exactly the stale
+        // entries this change exists to clear.
+        let legacy = ModelMapping(upstreamID: "Ornith-1.5-35B-A3B-MLX")
+        #expect(legacy.origin == nil)
+        #expect(legacy.isDiscoveryOwned)
+
+        let result = ModelCatalog.reconcile(existing: [legacy], discovered: discovered("a:1"))
+        #expect(result.removed == ["Ornith-1.5-35B-A3B-MLX"])
+    }
+
+    @Test("a blank row being typed is neither pruned nor flagged")
     func ignoresBlankRows() {
         let result = ModelCatalog.reconcile(
             existing: [ModelMapping(upstreamID: "")],
             discovered: discovered("a:1")
         )
         #expect(result.unavailable.isEmpty)
+        #expect(result.removed.isEmpty)
+        #expect(result.models.contains { $0.upstreamID.isEmpty })
     }
 
     @Test("every populated tier ends up with exactly one default")
@@ -80,3 +108,4 @@ struct ModelCatalogTests {
         #expect(ModelCatalog.inferTier(from: "mystery-model") == .sonnet)
     }
 }
+

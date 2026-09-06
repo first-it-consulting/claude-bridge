@@ -84,7 +84,9 @@ struct ProfileEditor: View {
                     }
                     .disabled(discovering)
                     Button {
-                        profile.models.append(ModelMapping(upstreamID: ""))
+                        // Marked manual so a later discovery pass does not
+                        // prune a model this backend serves but never lists.
+                        profile.models.append(ModelMapping(upstreamID: "", origin: .manual))
                     } label: {
                         Label("Add", systemImage: "plus")
                     }
@@ -153,8 +155,10 @@ struct ProfileEditor: View {
     private var discoverySummary: String? {
         guard let discovery else { return nil }
         if discovery.failed { return "Backend listed no models" }
-        if discovery.added == 0 { return "Nothing new" }
-        return "Added \(discovery.added) model\(discovery.added == 1 ? "" : "s")"
+        var parts: [String] = []
+        if discovery.added > 0 { parts.append("added \(discovery.added)") }
+        if !discovery.removed.isEmpty { parts.append("removed \(discovery.removed.count)") }
+        return parts.isEmpty ? "Up to date" : parts.joined(separator: ", ").capitalizedFirst
     }
 
     /// Models configured here that the backend does not serve.
@@ -166,7 +170,7 @@ struct ProfileEditor: View {
     private func unavailableBanner(_ unavailable: [String]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Label(
-                "\(unavailable.count) model\(unavailable.count == 1 ? " is" : "s are") not served by this backend",
+                "\(unavailable.count) model\(unavailable.count == 1 ? " you added is" : "s you added are") not served by this backend",
                 systemImage: "exclamationmark.triangle.fill"
             )
             .foregroundStyle(.orange)
@@ -332,5 +336,12 @@ private struct ModelRow: View {
         }
         .padding(.vertical, 3)
         .opacity(model.enabled ? 1 : 0.5)
+    }
+}
+
+private extension String {
+    var capitalizedFirst: String {
+        guard let first else { return self }
+        return first.uppercased() + dropFirst()
     }
 }
