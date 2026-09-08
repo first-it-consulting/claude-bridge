@@ -21,25 +21,6 @@ struct MenuContent: View {
 
         Divider()
 
-        if state.settings.profiles.isEmpty {
-            Text("No profiles yet")
-        } else {
-            Section("Profile") {
-                ForEach(state.settings.profiles) { profile in
-                    Button {
-                        Task { await state.selectProfile(profile) }
-                    } label: {
-                        // A leading checkmark is the menu idiom for the current
-                        // choice; Toggle inside MenuBarExtra renders it for us.
-                        Label(
-                            profile.name,
-                            systemImage: profile.id == state.activeProfile?.id ? "checkmark" : ""
-                        )
-                    }
-                }
-            }
-        }
-
         Divider()
 
         claudeDesktopSection
@@ -73,22 +54,24 @@ struct MenuContent: View {
         .keyboardShortcut("q")
     }
 
+    /// One click per destination.
+    ///
+    /// Switching used to be three trips through the menu — pick the profile,
+    /// point Claude Desktop at the bridge, then restart it — for what is really
+    /// one decision. Profiles are listed here as destinations in their own
+    /// right, and choosing one does all three.
     @ViewBuilder
     private var claudeDesktopSection: some View {
-        Section("Claude Desktop") {
+        Section("Claude Desktop Uses") {
             if !state.claudeStatus.configDirectoryExists {
                 Text("Not set up for third-party inference")
             } else if state.claudeStatus.managedProfilePresent {
                 Text("Managed by MDM — local config is ignored")
-            } else if state.claudeStatus.bridgeEntryApplied {
-                Text("Using Claude Bridge")
-                Button("Restore Previous Configuration") {
-                    state.disconnectClaudeDesktop()
-                }
             } else {
-                Text("Using: \(state.claudeStatus.appliedEntryName ?? "no configuration")")
-                Button("Point Claude Desktop at the Bridge") {
-                    state.connectClaudeDesktop()
+                ForEach(Array(state.destinations.enumerated()), id: \.offset) { _, destination in
+                    Toggle(isOn: binding(for: destination)) {
+                        Text(ClaudeDestinationUI.label(for: destination))
+                    }
                 }
             }
 
@@ -97,6 +80,19 @@ struct MenuContent: View {
             }
             .disabled(!state.claudeStatus.claudeDesktopInstalled)
         }
+    }
+
+    /// A menu item that behaves like a radio button: picking it switches, and
+    /// picking the current one again does nothing rather than unsetting it.
+    private func binding(for destination: AppState.Destination) -> Binding<Bool> {
+        let isCurrent = state.isCurrent(destination)
+        return Binding(
+            get: { isCurrent },
+            set: { picked in
+                guard picked, !isCurrent else { return }
+                ClaudeDestinationUI.confirmAndSwitch(state, to: destination)
+            }
+        )
     }
 
     /// Restarting closes whatever the user has open in Claude Desktop, so it

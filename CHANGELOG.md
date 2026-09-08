@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Switch back to **Anthropic's own models** from the menu bar. Claude Desktop
+  has no configuration entry for first-party inference — it falls back to it
+  when no valid configuration is applied — so this takes it off third-party
+  inference without deleting anything, and switching back is one click. Useful
+  when some tasks want the real Claude and others want a local model.
+- Profiles are listed as destinations in their own right. Choosing one selects
+  the backend, points Claude Desktop at the bridge and restarts it in a single
+  click, instead of three separate trips through the menu. The restart prompt is
+  suppressible.
+- Configuration entries are labelled with where they actually send inference —
+  `Default (localhost:4000)` — because Claude Desktop names its own first entry
+  "Default" whatever it contains.
+
+### Fixed
+
+- "Restore previous configuration" reported success while doing nothing when the
+  bridge had no remembered entry, which left Claude Desktop stuck on the bridge
+  with no way back. Destinations are now chosen explicitly rather than
+  remembered.
+- The menu listed configuration entries as they were at launch, so entries
+  deleted in Claude Desktop went on being offered — and picking one wrote a
+  reference to a file that no longer existed. The config library is now watched
+  for changes.
+
+### Changed
+
+- The Settings pane and the menu bar now share one switcher, so they cannot
+  drift apart.
+- `previousClaudeEntryID` is no longer stored; it existed only for the restore
+  path that explicit destinations replace. Existing settings files are unaffected.
+
 ## [0.1.1] - 2026-09-06
 
 ### Fixed

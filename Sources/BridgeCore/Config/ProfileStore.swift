@@ -11,30 +11,33 @@ public struct BridgeSettings: Codable, Sendable {
     /// loopback, but any process on the machine can reach loopback, so a token
     /// still keeps other local software from using it as an open relay.
     public var gatewayToken: String
-    /// Entry Claude Desktop had applied before the bridge took over, so
-    /// disconnecting can put it back.
-    public var previousClaudeEntryID: String?
     public var startServerAtLaunch: Bool
     /// Number of requests kept in the log window.
     public var logCapacity: Int
+    /// Whether switching where Claude Desktop points asks before restarting it.
+    /// Optional so older `settings.json` files still decode; nil means ask.
+    public var confirmClaudeRestart: Bool?
 
     public init(
         profiles: [Profile] = [],
         activeProfileID: UUID? = nil,
         port: UInt16 = 8788,
         gatewayToken: String = BridgeSettings.generateToken(),
-        previousClaudeEntryID: String? = nil,
         startServerAtLaunch: Bool = true,
-        logCapacity: Int = 300
+        logCapacity: Int = 300,
+        confirmClaudeRestart: Bool? = nil
     ) {
         self.profiles = profiles
         self.activeProfileID = activeProfileID
         self.port = port
         self.gatewayToken = gatewayToken
-        self.previousClaudeEntryID = previousClaudeEntryID
         self.startServerAtLaunch = startServerAtLaunch
         self.logCapacity = logCapacity
+        self.confirmClaudeRestart = confirmClaudeRestart
     }
+
+    /// A switch restarts Claude Desktop; this says whether to ask first.
+    public var shouldConfirmClaudeRestart: Bool { confirmClaudeRestart ?? true }
 
     public static func generateToken() -> String {
         var bytes = [UInt8](repeating: 0, count: 24)

@@ -106,10 +106,11 @@ final class AppState {
     /// Keeps `claudeStatus` in step with the config library on disk.
     ///
     /// Claude Desktop rewrites that directory whenever the user adds, renames
-    /// or deletes a configuration, and the bridge reads it to say where Claude
-    /// Desktop currently points. Without this the status is whatever it was
-    /// when the app launched, so the menu went on describing a configuration
-    /// that had since been changed or deleted.
+    /// or deletes a configuration, and the bridge's own menu reads it. Without
+    /// this the status is whatever it was when the app launched, so a
+    /// configuration deleted in Claude Desktop went on being offered in our
+    /// menu — and picking it wrote an `appliedId` pointing at a file that no
+    /// longer exists.
     private func watchClaudeConfig() {
         configWatch?.cancel()
 
@@ -390,14 +391,9 @@ final class AppState {
     /// Points Claude Desktop at the bridge.
     func connectClaudeDesktop(announce: Bool = true) {
         do {
-            let previous = try claudeConfig.applyBridgeEntry(
+            try claudeConfig.applyBridgeEntry(
                 port: settings.port, apiKey: settings.gatewayToken
             )
-            // Only remember the first thing we displaced, so repeated connects
-            // do not overwrite the user's original configuration with our own.
-            if let previous, settings.previousClaudeEntryID == nil {
-                settings.previousClaudeEntryID = previous
-            }
             refreshClaudeStatus()
 
             if claudeStatus.managedProfilePresent {
@@ -413,13 +409,102 @@ final class AppState {
         }
     }
 
-    /// Puts Claude Desktop back on whatever it used before the bridge.
-    func disconnectClaudeDesktop() {
+    /// Configurations the user can send Claude Desktop back to.
+    var restorableEntries: [ClaudeDesktopConfig.ConfigEntry] {
+        claudeStatus.restorableEntries
+    }
+
+    /// Somewhere Claude Desktop can send inference, as the user thinks of it.
+    ///
+    /// A profile is a destination in its own right: picking one means "use that
+    /// backend", and whether the bridge is already applied is plumbing the user
+    /// should not have to think about.
+    enum Destination: Equatable {
+        case anthropicModels
+        case bridge(Profile)
+        case otherEntry(ClaudeDesktopConfig.ConfigEntry)
+
+        var name: String {
+            switch self {
+            case .anthropicModels: return "Anthropic's models"
+            case .bridge(let profile): return profile.name
+            case .otherEntry(let entry): return entry.name
+            }
+        }
+    }
+
+    /// Everywhere Claude Desktop could be pointed, in the order the menu shows.
+    var destinations: [Destination] {
+        [.anthropicModels]
+            + settings.profiles.map(Destination.bridge)
+            + restorableEntries.map(Destination.otherEntry)
+    }
+
+    func isCurrent(_ destination: Destination) -> Bool {
+        switch destination {
+        case .anthropicModels:
+            return claudeStatus.usingAnthropicModels
+        case .bridge(let profile):
+            return claudeStatus.bridgeEntryApplied && activeProfile?.id == profile.id
+        case .otherEntry(let entry):
+            return claudeStatus.appliedEntryName == entry.name
+        }
+    }
+
+    /// Performs a switch end to end: select the profile behind it, point Claude
+    /// Desktop at the right place, and restart it so the change takes effect.
+    ///
+    /// Doing all three from one click is the point. Separately these were three
+    /// trips through the menu for what the user experiences as a single choice,
+    /// and forgetting the restart left Claude Desktop showing the old models
+    /// with no hint why.
+    func switchClaudeDesktop(to destination: Destination, restart: Bool) async {
+        switch destination {
+        case .anthropicModels:
+            useAnthropicModels()
+        case .bridge(let profile):
+            if activeProfile?.id != profile.id {
+                await selectProfile(profile)
+            }
+            connectClaudeDesktop(announce: false)
+        case .otherEntry(let entry):
+            useClaudeDesktopEntry(entry)
+        }
+
+        // A failed switch leaves a notice explaining why; restarting on top of
+        // it would only replace that with a misleading success.
+        guard notice?.kind != .error else { return }
+
+        if restart, claudeConfig.isClaudeRunning() {
+            await restartClaudeDesktop()
+            notice = Notice(kind: .info, text: "Claude Desktop is now using \(destination.name).")
+        } else {
+            notice = Notice(
+                kind: .info,
+                text: "Claude Desktop is set to \(destination.name). Restart it to take effect."
+            )
+        }
+    }
+
+    /// Takes Claude Desktop off the bridge and back to Anthropic's own models.
+    func useAnthropicModels() {
         do {
-            try claudeConfig.restoreAppliedEntry(id: settings.previousClaudeEntryID)
-            settings.previousClaudeEntryID = nil
+            try claudeConfig.applyAnthropicModels()
             refreshClaudeStatus()
-            notice = Notice(kind: .info, text: "Restored Claude Desktop's previous configuration. Restart it to take effect.")
+            notice = Notice(kind: .info, text: "Claude Desktop is back on Anthropic's models. Restart it to take effect.")
+        } catch {
+            notice = Notice(kind: .error, text: error.localizedDescription)
+        }
+    }
+
+    /// Points Claude Desktop at a named entry the user chose, for when the
+    /// bridge has no remembered entry to fall back to or the user wants a
+    /// different one than the one it displaced.
+    func useClaudeDesktopEntry(_ entry: ClaudeDesktopConfig.ConfigEntry) {
+        do {
+            try claudeConfig.applyEntry(id: entry.id)
+            refreshClaudeStatus()
+            notice = Notice(kind: .info, text: "Claude Desktop is now using \(entry.name). Restart it to take effect.")
         } catch {
             notice = Notice(kind: .error, text: error.localizedDescription)
         }

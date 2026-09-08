@@ -85,20 +85,25 @@ struct GeneralSettingsView: View {
                 }
 
                 LabeledContent("Currently pointed at") {
-                    Text(state.claudeStatus.appliedBaseURL ?? state.claudeStatus.appliedEntryName ?? "Nothing")
+                    Text(state.destinations.first(where: state.isCurrent)
+                        .map(ClaudeDestinationUI.label) ?? "Nothing")
                         .font(.system(.body, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
 
                 HStack {
-                    Button("Point Claude Desktop at the Bridge") {
-                        state.connectClaudeDesktop()
+                    Menu {
+                        ForEach(Array(state.destinations.enumerated()), id: \.offset) { _, destination in
+                            Button(ClaudeDestinationUI.label(for: destination)) {
+                                ClaudeDestinationUI.confirmAndSwitch(state, to: destination)
+                            }
+                        }
+                    } label: {
+                        Text("Switch…")
                     }
+                    .fixedSize()
                     .disabled(!state.claudeStatus.configDirectoryExists)
 
-                    if state.claudeStatus.bridgeEntryApplied {
-                        Button("Restore Previous") { state.disconnectClaudeDesktop() }
-                    }
                     Spacer()
                     Button("Refresh") { state.refreshClaudeStatus() }
                 }
@@ -106,8 +111,9 @@ struct GeneralSettingsView: View {
                 Text("Claude Desktop")
             } footer: {
                 Text("""
-                    Claude Desktop reads its inference settings and model list once, at launch. \
-                    After connecting or switching profiles, restart it from the menu bar.
+                    Claude Desktop reads its inference settings and model list once, at launch, \
+                    so switching restarts it. Profiles are listed here too: choosing one points \
+                    Claude Desktop at the bridge and selects that backend in a single step.
                     """)
                 .font(.caption)
                 .foregroundStyle(.secondary)
