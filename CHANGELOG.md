@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-09
+
 ### Added
 
 - Switch back to **Anthropic's own models** from the menu bar. Claude Desktop
@@ -93,5 +95,6 @@ downloads it. Everything below shipped in 0.1.1 instead.
 - Release builds are not notarised until Apple Developer credentials are
   configured, so macOS asks for confirmation on first launch.
 
-[Unreleased]: https://github.com/first-it-consulting/claude-bridge/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/first-it-consulting/claude-bridge/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/first-it-consulting/claude-bridge/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/first-it-consulting/claude-bridge/releases/tag/v0.1.1
