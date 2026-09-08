@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Launch Claude Bridge at login**, in Settings. Claude Desktop cannot reach a
+  bridge that is not running and reads its inference config only at launch, so
+  opening it first after a reboot failed for the whole session. The existing
+  "start the bridge when Claude Bridge launches" setting only helped once the
+  app had been opened by hand; the two together make logging in enough. The
+  toggle reads its state from macOS rather than storing a copy, so it cannot
+  claim a registration the user has revoked in System Settings.
+
 ## [0.2.0] - 2026-09-09
 
 ### Added

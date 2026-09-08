@@ -35,6 +35,33 @@ struct GeneralSettingsView: View {
                     Text(portError).font(.caption).foregroundStyle(.red)
                 }
 
+                // Paired deliberately: together these two make "log in and it
+                // works" true. On its own the second one only helps once the
+                // user has already opened the app by hand.
+                Toggle("Launch Claude Bridge when you log in", isOn: Binding(
+                    get: { state.loginItemState == .enabled },
+                    set: { state.setLaunchAtLogin($0) }
+                ))
+                .disabled(state.loginItemState == .unavailable)
+
+                if state.loginItemState == .requiresApproval {
+                    HStack(spacing: 6) {
+                        Label("""
+                            Turned off in System Settings. Only you can allow it there.
+                            """, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        Button("Open Login Items") { LoginItem.openSystemSettings() }
+                    }
+                    .font(.callout)
+                } else if state.loginItemState == .unavailable {
+                    Text("""
+                        macOS will not register this build as a login item. Move Claude Bridge \
+                        to Applications and open it from there.
+                        """)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                }
+
                 Toggle("Start the bridge when Claude Bridge launches", isOn: $state.settings.startServerAtLaunch)
 
                 LabeledContent("Gateway token") {
@@ -53,8 +80,11 @@ struct GeneralSettingsView: View {
                 Text("Bridge")
             } footer: {
                 Text("""
-                    The bridge listens on loopback only. The token stops other software on \
-                    this Mac from using it as an open relay to your providers.
+                    Claude Desktop cannot reach a bridge that is not running, and it gives up \
+                    for the whole session if the bridge is down when it launches — so starting \
+                    at login saves more than a click. The bridge listens on loopback only, and \
+                    the token stops other software on this Mac from using it as an open relay \
+                    to your providers.
                     """)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -134,6 +164,15 @@ struct GeneralSettingsView: View {
         .onAppear {
             portText = String(state.settings.port)
             state.refreshClaudeStatus()
+            state.refreshLoginItemState()
+        }
+        // The user can revoke the login item in System Settings while this
+        // window is open, so re-read it when they come back rather than showing
+        // a toggle that no longer matches macOS.
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification
+        )) { _ in
+            state.refreshLoginItemState()
         }
     }
 

@@ -22,6 +22,10 @@ final class AppState {
     private(set) var serverError: String?
     private(set) var health: HealthChecker.Health = .unknown
     private(set) var claudeStatus: ClaudeDesktopConfig.Status
+    /// Read from macOS rather than persisted, so the toggle cannot claim a
+    /// setting the system has since revoked. Refreshed when the app becomes
+    /// active, because the user can change it in System Settings while we run.
+    private(set) var loginItemState: LoginItem.State = LoginItem.state
     private(set) var entries: [LogEntry] = []
     /// Set when a background action wants to say something in the menu.
     var notice: Notice?
@@ -92,6 +96,7 @@ final class AppState {
         }
         await refreshHealth()
         watchClaudeConfig()
+        refreshLoginItemState()
     }
 
     func onQuit() async {
@@ -380,6 +385,37 @@ final class AppState {
     /// to the old backend, and keeping it would flag exactly the wrong rows.
     func invalidateDiscovery(for profileID: UUID) {
         servedModelIDs[profileID] = nil
+    }
+
+    // MARK: - Launch at login
+
+    func refreshLoginItemState() {
+        loginItemState = LoginItem.state
+    }
+
+    /// Turns launch-at-login on or off, then re-reads what macOS actually did.
+    ///
+    /// Registering while the user has revoked approval succeeds and still
+    /// leaves the item switched off, so the result is reported from `status`
+    /// rather than assumed from the call returning.
+    func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            try LoginItem.setEnabled(enabled)
+            refreshLoginItemState()
+
+            if loginItemState == .requiresApproval {
+                notice = Notice(kind: .warning, text: """
+                    macOS is holding this back. Allow “Claude Bridge” under Login Items \
+                    in System Settings for it to start automatically.
+                    """)
+            }
+        } catch {
+            refreshLoginItemState()
+            notice = Notice(
+                kind: .error,
+                text: "Could not change launch at login: \(error.localizedDescription)"
+            )
+        }
     }
 
     // MARK: - Claude Desktop wiring
