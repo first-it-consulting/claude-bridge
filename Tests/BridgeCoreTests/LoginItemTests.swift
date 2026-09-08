@@ -6,14 +6,32 @@ import ServiceManagement
 @Suite("Launch at login")
 struct LoginItemTests {
 
-    /// `requiresApproval` is the case that matters: macOS reports it when the
-    /// user has switched the item off in System Settings, and registering again
-    /// does not clear it. Folding it into `enabled` would show a toggle that is
-    /// on while nothing launches at login.
-    @Test("every SMAppService status maps to a distinct state")
-    func statusesAreDistinct() {
-        let states: [LoginItem.State] = [.enabled, .disabled, .requiresApproval, .unavailable]
-        #expect(Set(states.map(String.init(describing:))).count == states.count)
+    /// `notFound` means "off", not "impossible". macOS reports it for an app
+    /// that has never been registered — `notRegistered` is not what you get —
+    /// and `register()` then succeeds, ad-hoc signature included. Treating it
+    /// as "unavailable" disabled the toggle in exactly the case where the user
+    /// was switching the feature on for the first time, which is how this
+    /// shipped broken.
+    @Test(
+        "a status that is not enabled or awaiting approval means simply off",
+        arguments: [
+            (SMAppService.Status.enabled, LoginItem.State.enabled),
+            (.requiresApproval, .requiresApproval),
+            (.notRegistered, .disabled),
+            (.notFound, .disabled),
+        ]
+    )
+    func mapsStatus(status: SMAppService.Status, expected: LoginItem.State) {
+        #expect(LoginItem.state(for: status) == expected)
+    }
+
+    /// `requiresApproval` stays its own case: folding it into `enabled` would
+    /// show a toggle that is on while nothing launches at login, and folding it
+    /// into `disabled` would hide that only the user can clear it.
+    @Test("approval is not mistaken for on or off")
+    func approvalIsDistinct() {
+        #expect(LoginItem.state(for: .requiresApproval) != .enabled)
+        #expect(LoginItem.state(for: .requiresApproval) != .disabled)
     }
 
     @Test("reading the state does not throw or change anything")

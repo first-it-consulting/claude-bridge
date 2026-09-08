@@ -16,27 +16,38 @@ import ServiceManagement
 /// so `status` is read every time rather than cached.
 public enum LoginItem {
 
-    public enum State: Equatable {
+    public enum State: Equatable, Sendable {
         /// Registered, and macOS will launch the app at login.
         case enabled
-        /// Not registered.
+        /// Not registered. `register()` is expected to work.
         case disabled
         /// Registered, but the user has switched it off in System Settings.
         /// Re-registering does not clear this; only the user can.
         case requiresApproval
-        /// Login items are unavailable — the app is not in a state macOS will
-        /// register, which for a development build usually means it is running
-        /// somewhere `SMAppService` will not accept.
-        case unavailable
     }
 
-    public static var state: State {
-        switch SMAppService.mainApp.status {
+    /// Reported by macOS, mapped to what the UI can act on.
+    ///
+    /// `notFound` means "off", not "impossible". An app that has never been
+    /// registered reports `notFound` rather than the `notRegistered` its name
+    /// suggests, and `register()` then succeeds normally — including for an
+    /// ad-hoc signed build. Reading it as "macOS will not accept this app"
+    /// disabled the toggle in precisely the case where the user was trying to
+    /// switch the feature on for the first time.
+    ///
+    /// Whether registration will work is therefore not predicted from `status`
+    /// at all: the toggle stays live, and a `register()` that fails reports its
+    /// own error.
+    public static var state: State { state(for: SMAppService.mainApp.status) }
+
+    /// Split out so the mapping can be tested without registering anything on
+    /// the machine running the tests.
+    public static func state(for status: SMAppService.Status) -> State {
+        switch status {
         case .enabled: return .enabled
-        case .notRegistered: return .disabled
         case .requiresApproval: return .requiresApproval
-        case .notFound: return .unavailable
-        @unknown default: return .unavailable
+        case .notRegistered, .notFound: return .disabled
+        @unknown default: return .disabled
         }
     }
 
