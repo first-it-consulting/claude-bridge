@@ -42,7 +42,6 @@ struct GeneralSettingsView: View {
                     get: { state.loginItemState == .enabled },
                     set: { state.setLaunchAtLogin($0) }
                 ))
-                .disabled(state.loginItemState == .unavailable)
 
                 if state.loginItemState == .requiresApproval {
                     HStack(spacing: 6) {
@@ -53,13 +52,6 @@ struct GeneralSettingsView: View {
                         Button("Open Login Items") { LoginItem.openSystemSettings() }
                     }
                     .font(.callout)
-                } else if state.loginItemState == .unavailable {
-                    Text("""
-                        macOS will not register this build as a login item. Move Claude Bridge \
-                        to Applications and open it from there.
-                        """)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
                 }
 
                 Toggle("Start the bridge when Claude Bridge launches", isOn: $state.settings.startServerAtLaunch)
