@@ -81,7 +81,9 @@ jobs:
             echo
             echo '### Checksum'
             echo '```'
-            cat "dist/ClaudeBridge-$version.dmg.sha256" | awk '{print $1"  ClaudeBridge-'"$version"'.dmg"}'
+            # The checksum file now records a bare filename, so it goes into
+            # the notes exactly as it is published.
+            cat "dist/ClaudeBridge-$version.dmg.sha256"
             echo '```'
           } > release-notes.md
           cat release-notes.md

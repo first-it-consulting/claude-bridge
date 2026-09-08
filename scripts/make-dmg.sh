@@ -100,5 +100,9 @@ else
     echo "==> Skipping notarisation (credentials not provided)"
 fi
 
-shasum -a 256 "$DMG" | tee "$DMG.sha256"
+# Hash from inside dist/ so the file records a bare filename. Hashing the full
+# path recorded the build machine's absolute path — on CI, /Users/runner/... —
+# which made the documented `shasum -a 256 -c ClaudeBridge-<version>.dmg.sha256`
+# fail for everyone who downloaded it.
+( cd "$DIST" && shasum -a 256 "$(basename "$DMG")" | tee "$(basename "$DMG").sha256" )
 echo "==> Done: $DMG"
