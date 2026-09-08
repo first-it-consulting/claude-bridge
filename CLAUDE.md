@@ -72,7 +72,45 @@ overrides everything written locally — detect and report it rather than failin
 silently.
 
 **Claude Desktop reads its inference config and model list only at launch.** Any
-change to either needs an app restart to take effect.
+change to either needs an app restart to take effect. Switching where it points
+is therefore a three-part operation — select the profile, write `appliedId`,
+restart Claude Desktop — and the UI does all three from one click, because
+leaving the restart to the user meant the old models stayed in the picker with
+no hint why.
+
+**The library is not static; watch it.** Claude Desktop rewrites that directory
+whenever the user adds, renames or deletes a configuration. `AppState` keeps a
+`DispatchSource` vnode watch on it, because reading the status once at launch
+left deleted entries being offered in our own menu — and picking one wrote an
+`appliedId` pointing at a file that no longer existed. Both apps write via
+temp-file-and-rename, which the directory watch does see.
+
+### Turning third-party inference off
+
+There is no library entry for "use Anthropic's own models". Claude Desktop reads
+a configuration only when `appliedId` looks like one of its ids:
+
+```js
+eje = /^[a-f0-9-]{36}$/
+function PMe(e){ let t = e?.appliedId;
+  if (!(typeof t != "string" || !eje.test(t))) try { return JSON.parse(...) } ... }
+// caller:  PMe(e) ?? {}
+```
+
+Anything else yields an empty config, no `inferenceProvider`, and first-party
+inference. `applyAnthropicModels` therefore blanks `appliedId` and touches
+nothing else, so every entry survives and switching back is one `applyEntry`.
+This is undocumented behaviour of Claude Desktop's loader, so the id rule is
+pinned by a parameterised test — if a future version changes it, that test fails
+instead of the user being silently stranded on a local backend.
+
+The two modes are separate installs in every practical sense: first-party uses
+`~/Library/Application Support/Claude/` and logs to `~/Library/Logs/Claude/`,
+third-party uses the `Claude-3p` variants of both, and they have different
+accounts and history. Developer Mode is per-directory too — the
+`Developer ▸ Configure Third-Party Inference` menu is gated on `allowDevTools`
+in `developer_settings.json` inside whichever `userData` directory is live, so
+enabling it in one mode does not enable it in the other.
 
 ### The advertised-id scheme
 

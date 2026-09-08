@@ -13,7 +13,8 @@ Ollama, LM Studio, llama.cpp, vLLM, OpenRouter, Groq, LiteLLM, or anything else
 that speaks the OpenAI or Anthropic API. Switch providers from the status bar.
 
 Ollama ships a one-provider version of this. Claude Bridge is the generic one:
-any number of providers, any model, one click to switch.
+any number of providers, any model, one click to switch — including switching
+back to Anthropic's own models when the task calls for them.
 
 ## How it works
 
@@ -112,12 +113,37 @@ Needs a Swift 6 toolchain (Xcode 16 or later).
    Studio, …), then press **Discover** to pull in the models it serves.
 3. **Assign tiers.** Each model maps to Haiku, Sonnet, or Opus. Mark one model
    per tier as the default.
-4. **Point Claude Desktop at the bridge** from the menu bar.
-5. **Restart Claude Desktop.** It reads its inference settings and model list
-   only at launch.
+4. **Pick your profile** under **Claude Desktop Uses** in the menu bar. That
+   points Claude Desktop at the bridge, selects the backend, and restarts Claude
+   Desktop so it picks the change up.
 
-Switching profiles later is one click in the menu bar — plus a Claude Desktop
-restart if you want its model picker to refresh.
+## Switching
+
+The menu bar lists everywhere Claude Desktop can send inference, and choosing one
+is a single click:
+
+```
+Claude Desktop Uses
+    Anthropic's Models (claude.ai)
+    Ollama (local) (localhost:11434)
+  ✓ oMLX (localhost:4000)
+    ─────────────────────
+    Restart Claude Desktop
+```
+
+Your profiles are destinations in their own right — whether the bridge entry is
+currently applied is plumbing you should not have to think about. **Anthropic's
+Models** takes Claude Desktop off third-party inference entirely, so you can use
+the real Claude for one task and a local model for the next.
+
+Claude Desktop reads its inference settings and model list only at launch, so
+every switch restarts it. It asks first, with the usual *Don't ask again* — tick
+that and switching really is one click.
+
+Note that the two modes are separate installs as far as Claude Desktop is
+concerned: third-party mode keeps its own settings directory, login and chat
+history, so your conversations do not follow you across a switch. That is Claude
+Desktop's design, not something the bridge can change.
 
 ## Backends
 
@@ -189,7 +215,7 @@ anywhere.
 | Path | What |
 | --- | --- |
 | `~/Library/Application Support/ClaudeBridge/settings.json` | profiles, port, token |
-| `~/Library/Application Support/Claude-3p/configLibrary/` | Claude Desktop's config; the bridge writes one entry named "Claude Bridge" and never edits others |
+| `~/Library/Application Support/Claude-3p/configLibrary/` | Claude Desktop's config; the bridge writes one entry named "Claude Bridge", and only ever changes which entry is applied — it never edits or deletes entries it did not create |
 | login keychain, service `com.claudebridge.backend-key` | backend API keys |
 
 If your Mac has an MDM configuration profile for Claude Desktop
@@ -240,7 +266,16 @@ after a non-zero "found" count means the ids were rejected by the picker filter,
 and `found` of zero means the bridge was unreachable or has no enabled models.
 
 **Requests fail with 401.** The gateway token in Claude Desktop's config is
-stale. Use "Point Claude Desktop at the Bridge" again, then restart it.
+stale. Pick your profile again under **Claude Desktop Uses**, which rewrites the
+entry and restarts Claude Desktop.
+
+**Claude Desktop has no Developer menu.** It is gated on `allowDevTools` in
+`developer_settings.json`, and third-party mode keeps its own settings directory
+— so enabling Developer Mode in the regular Claude does not enable it in
+third-party mode. Create
+`~/Library/Application Support/Claude-3p/developer_settings.json` containing
+`{"allowDevTools": true}` and relaunch. You only need that menu to rename or
+delete configuration entries; switching is all in the bridge's own menu.
 
 **A backend rejects requests.** Turn on **Capture bodies** in the Request Log,
 reproduce, and read the exact request that went upstream.

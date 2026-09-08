@@ -22,6 +22,7 @@ public struct ClaudeDesktopConfig: Sendable {
     public enum ConfigError: LocalizedError {
         case noConfigDirectory
         case unreadableMeta(String)
+        case unknownEntry(String)
 
         public var errorDescription: String? {
             switch self {
@@ -29,8 +30,51 @@ public struct ClaudeDesktopConfig: Sendable {
                 return "Claude Desktop's third-party config folder wasn't found. Enable Developer Mode in Claude Desktop (Help ▸ Troubleshooting) and open Developer ▸ Configure Third-Party Inference once, so the folder is created."
             case .unreadableMeta(let detail):
                 return "Claude Desktop's config index could not be read: \(detail)"
+            case .unknownEntry(let name):
+                return "Claude Desktop no longer has a configuration named \(name)."
             }
         }
+    }
+
+    /// One named entry in Claude Desktop's configuration library.
+    ///
+    /// Claude Desktop names its own bootstrap entry "Default", and users rarely
+    /// rename the ones they add, so the name alone does not say where an entry
+    /// points. `detail` carries that, and the UI shows the two together.
+    public struct ConfigEntry: Sendable, Equatable, Identifiable {
+        public var id: String
+        public var name: String
+        /// Where this entry sends inference, in as few characters as possible:
+        /// a host and port for a gateway, the provider's name otherwise, and
+        /// nil for an entry nobody has configured yet.
+        public var detail: String?
+
+        public init(id: String, name: String, detail: String? = nil) {
+            self.id = id
+            self.name = name
+            self.detail = detail
+        }
+
+        /// What to put on a menu item — "Default (localhost:4000)".
+        public var label: String {
+            guard let detail else { return name }
+            return "\(name) (\(detail))"
+        }
+    }
+
+    /// Summarises an entry for `ConfigEntry.detail`, reading the same fields
+    /// Claude Desktop does.
+    private func detail(forEntry id: String) -> String? {
+        guard let config = try? readEntry(id), case .object(let fields) = config else { return nil }
+
+        if let url = fields["inferenceGatewayBaseUrl"]?.stringValue,
+           let parsed = URL(string: url), let host = parsed.host {
+            if let port = parsed.port { return "\(host):\(port)" }
+            return host
+        }
+        // Vertex, Bedrock and friends carry no base URL of their own.
+        if let provider = fields["inferenceProvider"]?.stringValue { return provider }
+        return nil
     }
 
     /// What the bridge can tell the user about the current wiring.
@@ -43,6 +87,13 @@ public struct ClaudeDesktopConfig: Sendable {
         public var appliedEntryName: String?
         /// An MDM profile overrides everything written locally.
         public var managedProfilePresent: Bool
+        /// Every entry in the library except the bridge's own — the
+        /// configurations "restore" can hand Claude Desktop back to. Empty when
+        /// the bridge's entry is the only one there is.
+        public var restorableEntries: [ConfigEntry] = []
+        /// Claude Desktop is off third-party inference entirely and using
+        /// Anthropic's own models.
+        public var usingAnthropicModels: Bool = false
     }
 
     public var configDirectory: URL
@@ -90,8 +141,21 @@ public struct ClaudeDesktopConfig: Sendable {
             bridgeEntryApplied: applied?.name == Self.entryName,
             appliedBaseURL: appliedConfig?["inferenceGatewayBaseUrl"]?.stringValue,
             appliedEntryName: applied?.name,
-            managedProfilePresent: fm.fileExists(atPath: Self.managedProfileURL.path)
+            managedProfilePresent: fm.fileExists(atPath: Self.managedProfileURL.path),
+            restorableEntries: meta.entries
+                .filter { $0.name != Self.entryName }
+                .map { ConfigEntry(id: $0.id, name: $0.name, detail: detail(forEntry: $0.id)) },
+            usingAnthropicModels: !Self.isLibraryID(meta.appliedId)
         )
+    }
+
+    /// Claude Desktop only treats `appliedId` as a library reference when it
+    /// looks like one of its own ids — its loader tests it against
+    /// `/^[a-f0-9-]{36}$/` and otherwise reads no configuration at all.
+    static func isLibraryID(_ id: String?) -> Bool {
+        let allowed = Set("0123456789abcdef-")
+        guard let id, id.count == 36 else { return false }
+        return id.allSatisfy(allowed.contains)
     }
 
     // MARK: - Writing
@@ -134,17 +198,36 @@ public struct ClaudeDesktopConfig: Sendable {
         return previousAppliedId == id ? nil : previousAppliedId
     }
 
-    /// Points Claude Desktop back at a previously applied entry. Entries the
-    /// bridge did not create are left exactly as they were.
-    public func restoreAppliedEntry(id: String?) throws {
+    /// Takes Claude Desktop off third-party inference, back to Anthropic's own
+    /// models.
+    ///
+    /// There is no library entry for this: Claude Desktop reads a configuration
+    /// only when `appliedId` looks like one of its ids, and falls back to
+    /// first-party inference when it does not. Blanking it is therefore the
+    /// documented-by-behaviour off switch, and it leaves every entry in place
+    /// so switching back is just another `applyEntry`.
+    public func applyAnthropicModels() throws {
         var meta = try readMeta()
-        guard let id, meta.entries.contains(where: { $0.id == id }) else {
-            // The entry is gone; leaving `appliedId` untouched is safer than
-            // guessing at a replacement.
-            return
-        }
-        meta.appliedId = id
+        meta.appliedId = ""
         try writeMeta(meta)
+    }
+
+    /// Points Claude Desktop at any entry already in its library, by id.
+    ///
+    /// This is how the user switches back to a configuration the bridge did not
+    /// create. It writes `appliedId` and nothing else, so the entry's own
+    /// contents stay exactly as Claude Desktop left them.
+    ///
+    /// - Returns: the entry Claude Desktop now points at.
+    @discardableResult
+    public func applyEntry(id: String) throws -> ConfigEntry {
+        var meta = try readMeta()
+        guard let entry = meta.entries.first(where: { $0.id == id }) else {
+            throw ConfigError.unknownEntry(id)
+        }
+        meta.appliedId = entry.id
+        try writeMeta(meta)
+        return ConfigEntry(id: entry.id, name: entry.name)
     }
 
     // MARK: - Relaunching
