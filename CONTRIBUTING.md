@@ -119,6 +119,37 @@ Release whose notes are the changelog section plus a checksum. To rehearse
 without publishing, run the workflow manually from the Actions tab — that path
 builds and uploads an artefact but creates no release.
 
+### Which number to bump
+
+Semantic Versioning, as the changelog says. A new feature is a minor bump even
+when it looks small from the outside — shipping one as a patch tells people they
+can skip the release. Patches are for fixes and nothing else.
+
+### Patch releases
+
+The steps above ship everything on `main`, which is what you want when `main`
+holds only fixes. When `main` has already moved on and a fix needs to reach
+people on the current release without dragging unreleased features with it, cut
+the patch from the tag instead.
+
+The workflow does not care which branch a tag points at — it builds the tag and
+publishes under it — so nothing special is needed beyond branching from the
+right place:
+
+```sh
+git switch -c release/0.2.x v0.2.0
+git cherry-pick <fix>                  # repeat for each fix
+# add a ## [0.2.1] - YYYY-MM-DD section to CHANGELOG.md, set VERSION to 0.2.1
+git commit -am "chore(release): 0.2.1"
+git tag -a v0.2.1 -m "Claude Bridge 0.2.1"
+git push origin release/0.2.x v0.2.1
+```
+
+Keep the branch: further patches on that line continue from it. Afterwards, port
+the new changelog section back to `main` so the file stays a full history — the
+fixes themselves are already there, since a patch release cherry-picks from
+`main` rather than the other way round.
+
 ### Signing secrets
 
 Without these, releases are ad-hoc signed and macOS warns on first launch. With
