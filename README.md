@@ -78,12 +78,18 @@ Haiku and a large one to Opus gets you sensible routing for free.
 Download the latest `.dmg` from [Releases](https://github.com/first-it-consulting/claude-bridge/releases/latest),
 open it, and drag **Claude Bridge** to Applications.
 
-Releases are not notarised yet, so macOS refuses them on first launch. Either
-right-click the app and choose **Open**, or clear the quarantine flag:
+Releases are not notarised, so macOS refuses them on first launch. Open the app,
+let it be blocked, then allow it in **System Settings ▸ Privacy & Security** —
+scroll to the message naming Claude Bridge and press **Open Anyway**.
+
+Or clear the quarantine flag and skip the round trip:
 
 ```sh
 xattr -d com.apple.quarantine "/Applications/Claude Bridge.app"
 ```
+
+On macOS 14 you can also right-click the app and choose **Open**. That shortcut
+was removed in macOS 15, so on anything newer use one of the two above.
 
 Verify the download if you like — each release publishes a checksum next to the
 DMG:

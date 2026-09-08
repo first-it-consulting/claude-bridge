@@ -71,11 +71,18 @@ jobs:
           ### Installing
 
           This build is **not notarised**, so macOS will refuse it on first launch.
-          Right-click the app in Applications and choose **Open**, or run:
+          Open it, let it be blocked, then allow it in **System Settings ▸
+          Privacy & Security** — scroll to the message naming Claude Bridge and
+          press **Open Anyway**.
+
+          Or clear the quarantine flag and skip the round trip:
 
           ```sh
           xattr -d com.apple.quarantine "/Applications/Claude Bridge.app"
           ```
+
+          On macOS 14 you can also right-click the app and choose **Open**. That
+          shortcut was removed in macOS 15.
           EOF
             fi
             echo
