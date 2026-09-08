@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-09
+
 ### Added
 
 - **Launch Claude Bridge at login**, in Settings. Claude Desktop cannot reach a
@@ -16,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   app had been opened by hand; the two together make logging in enough. The
   toggle reads its state from macOS rather than storing a copy, so it cannot
   claim a registration the user has revoked in System Settings.
+
+### Fixed
+
+- The published `.sha256` recorded the build machine's absolute path instead of
+  the file's name, so the documented
+  `shasum -a 256 -c ClaudeBridge-<version>.dmg.sha256` failed for everyone who
+  downloaded a release. The hashes were always correct; only the name beside
+  them was unusable. The 0.1.1 and 0.2.0 assets have been corrected in place.
 
 ## [0.2.0] - 2026-09-09
 
@@ -105,6 +115,7 @@ downloads it. Everything below shipped in 0.1.1 instead.
 - Release builds are not notarised until Apple Developer credentials are
   configured, so macOS asks for confirmation on first launch.
 
-[Unreleased]: https://github.com/first-it-consulting/claude-bridge/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/first-it-consulting/claude-bridge/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/first-it-consulting/claude-bridge/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/first-it-consulting/claude-bridge/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/first-it-consulting/claude-bridge/releases/tag/v0.1.1
