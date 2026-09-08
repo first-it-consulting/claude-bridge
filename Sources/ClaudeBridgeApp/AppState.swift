@@ -43,6 +43,7 @@ final class AppState {
 
     private var saveTask: Task<Void, Never>?
     private var logObservation: UUID?
+    private var configWatch: DispatchSourceFileSystemObject?
 
     init() {
         let loaded = ProfileStore().load()
@@ -90,11 +91,54 @@ final class AppState {
             await discoverModels(for: profile.id)
         }
         await refreshHealth()
+        watchClaudeConfig()
     }
 
     func onQuit() async {
+        configWatch?.cancel()
+        configWatch = nil
         await server.shutdown()
         try? store.save(settings)
+    }
+
+    // MARK: - Watching Claude Desktop's config
+
+    /// Keeps `claudeStatus` in step with the config library on disk.
+    ///
+    /// Claude Desktop rewrites that directory whenever the user adds, renames
+    /// or deletes a configuration, and the bridge reads it to say where Claude
+    /// Desktop currently points. Without this the status is whatever it was
+    /// when the app launched, so the menu went on describing a configuration
+    /// that had since been changed or deleted.
+    private func watchClaudeConfig() {
+        configWatch?.cancel()
+
+        let directory = claudeConfig.configDirectory
+        let descriptor = open(directory.path, O_EVTONLY)
+        guard descriptor >= 0 else { return }
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: descriptor,
+            // Entries are written as a temporary file and renamed, so adding or
+            // removing one shows up as a write on the directory.
+            eventMask: [.write, .delete, .rename],
+            queue: .main
+        )
+        source.setEventHandler { [weak self] in
+            guard let self else { return }
+            MainActor.assumeIsolated {
+                let events = source.data
+                self.refreshClaudeStatus()
+                // The directory itself was replaced, so this descriptor now
+                // points at something no one will write to again.
+                if events.contains(.delete) || events.contains(.rename) {
+                    self.watchClaudeConfig()
+                }
+            }
+        }
+        source.setCancelHandler { close(descriptor) }
+        source.resume()
+        configWatch = source
     }
 
     // MARK: - Server
