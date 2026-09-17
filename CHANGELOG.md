@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and logs the refusal, and a settings file with an empty token has one
   generated when it is read, so the state is repaired rather than merely
   reported.
+- The gateway token's files are written `0600` rather than left at the default
+  `0644`, and the settings directory is created `0700`. `~/Library` is `0700` on
+  a stock macOS, so this was not a live exposure — it is there for the machine
+  whose owner has loosened those directories.
 
 ## [0.3.0] - 2026-09-09
 

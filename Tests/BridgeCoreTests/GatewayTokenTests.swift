@@ -90,4 +90,27 @@ struct GatewayTokenTests {
         // The rest of the file is kept; this is a repair, not a reset.
         #expect(loaded.port == 8788)
     }
+
+    /// `~/Library` being `0700` is what actually keeps another local user out.
+    /// This is the belt to that pair of braces, and it has to survive a save
+    /// over a file that already exists, because `.atomic` carries the old
+    /// file's mode across the rename.
+    @Test("saved settings are readable by their owner alone")
+    func saveRestrictsPermissions() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cb-\(UUID().uuidString)")
+        let url = directory.appendingPathComponent("settings.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = ProfileStore(fileURL: url)
+        // A file left behind by an older version, world-readable.
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: url)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+
+        try store.save(BridgeSettings(gatewayToken: "cb-test"))
+
+        let mode = try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber
+        #expect(mode?.int16Value == 0o600)
+    }
 }
