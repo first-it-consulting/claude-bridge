@@ -75,7 +75,15 @@ public struct ProfileStore: Sendable {
             // the existing file is left alone until the user saves.
             return BridgeSettings(profiles: BackendPreset.starterProfiles())
         }
-        return settings
+        // The token is the bridge's only access control, so an empty one is a
+        // broken settings file rather than a way to turn authentication off.
+        // Repairing it here covers the app and the daemon alike; the server
+        // rejects every request while it is empty, so the repair is what keeps
+        // a truncated file from stopping the bridge working.
+        guard settings.gatewayToken.isEmpty else { return settings }
+        var repaired = settings
+        repaired.gatewayToken = BridgeSettings.generateToken()
+        return repaired
     }
 
     public func save(_ settings: BridgeSettings) throws {

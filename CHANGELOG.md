@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An empty `gatewayToken` no longer turns authentication off.** The token is
+  what stops other software on the machine using the bridge as an open relay to
+  your paid provider, but an empty one waved every request through — so a
+  hand-edited or truncated `settings.json` opened the relay silently, since
+  loopback asks for no other credential. The bridge now refuses those requests
+  and logs the refusal, and a settings file with an empty token has one
+  generated when it is read, so the state is repaired rather than merely
+  reported.
+
 ## [0.3.0] - 2026-09-09
 
 ### Added

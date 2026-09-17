@@ -328,7 +328,20 @@ public actor BridgeRouter {
     // MARK: - Auth
 
     private func requireAuth(_ request: BridgeRequest, sink: ResponseSink, path: String) async -> Bool {
-        guard !token.isEmpty else { return true }
+        // An empty token used to wave every request through, which turned a
+        // hand-edited or truncated `settings.json` into an open relay to the
+        // user's paid provider — silently, since loopback needs no other
+        // credential. Refuse instead: the requests fail visibly in the log and
+        // `ProfileStore.load()` repairs the token before it gets this far.
+        guard !token.isEmpty else {
+            await log.append(LogEntry(
+                method: request.method, path: path, profileName: profile.name,
+                outcome: .failed(status: 401, message: "Rejected: no gateway token is configured")
+            ))
+            await respondError(sink, status: 401, type: "authentication_error",
+                               message: "No gateway token is configured")
+            return false
+        }
 
         let presented: String?
         if let bearer = request.header("authorization"), bearer.lowercased().hasPrefix("bearer ") {
