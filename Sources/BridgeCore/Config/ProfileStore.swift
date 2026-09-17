@@ -75,16 +75,48 @@ public struct ProfileStore: Sendable {
             // the existing file is left alone until the user saves.
             return BridgeSettings(profiles: BackendPreset.starterProfiles())
         }
-        return settings
+        // The token is the bridge's only access control, so an empty one is a
+        // broken settings file rather than a way to turn authentication off.
+        // Repairing it here covers the app and the daemon alike; the server
+        // rejects every request while it is empty, so the repair is what keeps
+        // a truncated file from stopping the bridge working.
+        guard settings.gatewayToken.isEmpty else { return settings }
+        var repaired = settings
+        repaired.gatewayToken = BridgeSettings.generateToken()
+        return repaired
     }
 
     public func save(_ settings: BridgeSettings) throws {
+        let directory = fileURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(
-            at: fileURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
         )
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         try enc.encode(settings).write(to: fileURL, options: .atomic)
+        try FilePermissions.restrictToOwner(fileURL)
+    }
+}
+
+/// Keeps the files holding the gateway token readable by their owner alone.
+///
+/// `~/Library` is `0700` on a stock macOS, so this is not what stands between
+/// the token and another local user — it is there for the machine whose owner
+/// has loosened those directories, and so the guarantee does not depend on a
+/// permission this code never set.
+enum FilePermissions {
+
+    /// Sets `0600`, after the write rather than before.
+    ///
+    /// `Data.write(options: .atomic)` replaces the file through a rename and
+    /// carries the old file's mode across, so a mode applied at creation is not
+    /// enough on its own — a file that predates this code would keep `0644`
+    /// through every later save.
+    static func restrictToOwner(_ url: URL) throws {
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600], ofItemAtPath: url.path
+        )
     }
 }

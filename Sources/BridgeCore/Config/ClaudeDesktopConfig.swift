@@ -298,5 +298,9 @@ public struct ClaudeDesktopConfig: Sendable {
     /// `_meta.json` would leave the app with no usable configuration.
     private func writeAtomically(_ data: Data, to url: URL) throws {
         try data.write(to: url, options: .atomic)
+        // Our entry carries the gateway token as `inferenceGatewayApiKey`.
+        // `_meta.json` holds no secret, but it goes through the same path and
+        // the mode costs nothing.
+        try FilePermissions.restrictToOwner(url)
     }
 }
