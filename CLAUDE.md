@@ -15,6 +15,13 @@ swift test --filter "SharedModelTests"                    # one suite
 swift test --filter "advertisedIDsPassClaudeDesktopFilter" # one test
 ```
 
+Tests need the full Xcode toolchain. The Command Line Tools ship swift-testing
+as a framework the package build cannot use, so `swift test` under
+`DEVELOPER_DIR=/Library/Developer/CommandLineTools` fails with "no such module
+'Testing'" — and if Xcode's licence has not been accepted, every `swift`
+invocation fails instead, which reads like a broken checkout. `swift build
+--target BridgeCore` is the one thing that still works in that state.
+
 Live tests against a real backend are skipped unless both variables are set:
 
 ```sh
@@ -166,6 +173,22 @@ Each of these caused a real failure; the code carries comments explaining why.
   which fails on swift-collections' `_RopeModule` with the toolchain on GitHub's
   runners — and prints "Build complete!" before exiting non-zero, so it reads
   like a success.
+- **An empty `gatewayToken` must refuse, never wave requests through.** The
+  token is the bridge's only access control, and `requireAuth` used to treat an
+  empty one as "authentication off" — which made a hand-edited or truncated
+  `settings.json` an open relay to the user's paid provider, silently, because
+  loopback asks for nothing else. Tightening the comparison is not enough: a
+  constant-time compare of `""` against `""` is equal, so an empty token has to
+  be rejected before any comparison. `ProfileStore.load()` generates a token
+  when it reads an empty one, so the app and the daemon are both repaired rather
+  than left refusing everything. `SECURITY.md` treats making the token optional
+  as a vulnerability in its own right.
+- **`Data.write(options: .atomic)` inherits the replaced file's mode.** It
+  writes a temporary file and renames it over the target, carrying the old
+  file's permissions across, so a mode set at creation does not survive — a file
+  written by an earlier version keeps its `0644` through every later save. Both
+  files holding the gateway token are chmodded *after* the write for this
+  reason; see `FilePermissions.restrictToOwner`.
 - Ad-hoc signing changes the binary's cdhash on every build, so macOS re-prompts
   for keychain items. That is expected in development, not a bug to fix.
 
@@ -183,3 +206,12 @@ nothing.
 Conventional Commits, enforced from the first commit. Split unrelated fixes into
 separate commits even when they touch the same files, and verify each one builds
 and tests clean so `git bisect` stays useful.
+
+```sh
+./scripts/check-commits.sh origin/main HEAD   # what CI runs on the branch
+```
+
+`main` requires three checks, so a pull request is the normal way in: the unit
+tests, the commit-message check, and a full unsigned DMG build that proves the
+release path still works — including that both architecture slices are present.
+CONTRIBUTING.md has the scopes in use and the release procedure.
