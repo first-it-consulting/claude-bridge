@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-06
+
+### Added
+
+- **One-click update check in Settings.** The General settings panel now shows
+  an Update section that checks GitHub releases when the window opens. If a
+  newer version is available it shows the installed and remote versions side by
+  side with an Update button that opens the DMG download. When up to date it
+  shows the current version and a Check now button.
+- **Larger, resizable Settings window.** The window now defaults to 1200×800
+  with a minimum of 1100×700, and the model table columns stretch to fill the
+  available width instead of being fixed-size.
+
+## [0.3.2] - 2026-11-05
+
+### Fixed
+
+- **The macOS build no longer breaks on CI.** `swift package update` pulled in
+  swift-collections 1.7.5, whose Package.swift declares Swift tools version 6.4
+  while the GitHub Actions runner only ships 6.1, so `swift build` failed with
+  "package 'swift-collections' @ 1.7.5 is using Swift tools version 6.4.0 but
+  the installed version is 6.1.0". swift-collections is pinned to 1.2.1 (tools
+  version 5.10, the highest release that builds on CI) and swift-nio is kept at
+  its latest tools-6.1-compatible version, so the dependency line stays fresh
+  without drifting out of CI's reach.
+
 ## [0.3.1] - 2026-09-17
 
 ### Fixed
@@ -132,7 +158,8 @@ downloads it. Everything below shipped in 0.1.1 instead.
 - Release builds are not notarised until Apple Developer credentials are
   configured, so macOS asks for confirmation on first launch.
 
-[Unreleased]: https://github.com/first-it-consulting/claude-bridge/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/first-it-consulting/claude-bridge/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/first-it-consulting/claude-bridge/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/first-it-consulting/claude-bridge/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/first-it-consulting/claude-bridge/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/first-it-consulting/claude-bridge/compare/v0.1.1...v0.2.0
