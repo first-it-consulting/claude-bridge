@@ -125,6 +125,7 @@ struct ProfileEditor: View {
             }
         }
         .formStyle(.grouped)
+        .frame(maxWidth: .infinity)
         .task(id: profile.id) {
             // Same reasoning as AppState.apiKey(for:): do not prompt for a
             // secret this profile has no use for.
@@ -295,11 +296,11 @@ private struct ModelTable: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text("On").frame(width: 26)
+            Text("On").frame(width: 32)
             Text("Model ID").frame(maxWidth: .infinity, alignment: .leading)
-            Text("Shown as").frame(width: 130, alignment: .leading)
-            Text("Tier").frame(width: 96, alignment: .leading)
-            Text("Default").frame(width: 52)
+            Text("Shown as").frame(minWidth: 140, maxWidth: .infinity, alignment: .leading)
+            Text("Tier").frame(width: 100, alignment: .leading)
+            Text("Default").frame(width: 56)
             Spacer().frame(width: 22)
         }
         .font(.caption.weight(.medium))
@@ -355,7 +356,7 @@ private struct ModelRow: View {
             ))
             .textFieldStyle(.plain)
             .foregroundStyle(.secondary)
-            .frame(width: 130)
+            .frame(minWidth: 140, maxWidth: .infinity, alignment: .leading)
 
             Picker("", selection: $model.tier) {
                 ForEach(FamilyTier.allCases, id: \.self) { tier in

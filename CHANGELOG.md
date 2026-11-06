@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-06
+
+### Added
+
+- **One-click update check in Settings.** The General settings panel now shows
+  an Update section that checks GitHub releases when the window opens. If a
+  newer version is available it shows the installed and remote versions side by
+  side with an Update button that opens the DMG download. When up to date it
+  shows the current version and a Check now button.
+- **Larger, resizable Settings window.** The window now defaults to 1200×800
+  with a minimum of 1100×700, and the model table columns stretch to fill the
+  available width instead of being fixed-size.
+
 ## [0.3.2] - 2026-11-05
 
 ### Fixed

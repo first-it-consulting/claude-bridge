@@ -30,6 +30,18 @@ final class AppState {
     /// Set when a background action wants to say something in the menu.
     var notice: Notice?
 
+    // MARK: - Update state
+
+    private(set) var updateAvailable = false
+    private(set) var updateVersion: String?
+    private(set) var updateDownloadURL: URL?
+    private(set) var updateChecking = false
+    private(set) var updateError: String?
+    /// The running build's marketing version, shown alongside the remote version.
+    private(set) var installedVersion = AppInfo.version
+
+    private var updateCheckTask: Task<(), Never>?
+
     struct Notice: Identifiable, Equatable {
         enum Kind { case info, warning, error }
         let id = UUID()
@@ -97,6 +109,7 @@ final class AppState {
         await refreshHealth()
         watchClaudeConfig()
         refreshLoginItemState()
+        checkForUpdates()
     }
 
     func onQuit() async {
@@ -579,6 +592,32 @@ final class AppState {
             let value = captureBodies
             Task { [log] in await log.setCaptureBodies(value) }
         }
+    }
+
+    // MARK: - Update checking
+
+    func checkForUpdates() {
+        updateCheckTask?.cancel()
+        updateChecking = true
+        updateError = nil
+        let task = Task { [self] in
+            let result = await AppUpdateChecker.check(currentVersion: AppInfo.version)
+            guard !Task.isCancelled else { return }
+            updateChecking = false
+            if let result {
+                updateAvailable = result.available
+                updateVersion = result.version
+                updateDownloadURL = result.downloadURL
+            } else {
+                updateError = "Could not check for updates"
+            }
+        }
+        updateCheckTask = task
+    }
+
+    func installUpdate() {
+        guard let url = updateDownloadURL else { return }
+        NSWorkspace.shared.open(url)
     }
 
     // MARK: - Saving

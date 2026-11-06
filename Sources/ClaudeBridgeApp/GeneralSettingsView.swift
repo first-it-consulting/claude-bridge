@@ -151,12 +151,47 @@ struct GeneralSettingsView: View {
                     step: 50
                 )
             }
+
+            Section("Update") {
+                HStack {
+                    if state.updateChecking {
+                        ProgressView()
+                            .frame(height: 14)
+                        Text("Checking…")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    } else if let error = state.updateError {
+                        Text(error)
+                            .font(.callout)
+                            .foregroundStyle(.red)
+                    } else if state.updateAvailable, let version = state.updateVersion {
+                        Label("Update available · \(state.installedVersion) → \(version)", systemImage: "arrow.down.circle.fill")
+                            .font(.callout)
+                            .tint(.accentColor)
+                        Spacer()
+                        Button("Update") { state.installUpdate() }
+                    } else if let version = state.updateVersion {
+                        Label("Up to date · \(state.installedVersion) (\(version))", systemImage: "checkmark.seal.fill")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Check now") { state.checkForUpdates() }
+                    } else {
+                        Label("Up to date · \(state.installedVersion)", systemImage: "checkmark.seal.fill")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Check now") { state.checkForUpdates() }
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
         .onAppear {
             portText = String(state.settings.port)
             state.refreshClaudeStatus()
             state.refreshLoginItemState()
+            state.checkForUpdates()
         }
         // The user can revoke the login item in System Settings while this
         // window is open, so re-read it when they come back rather than showing

@@ -21,10 +21,10 @@ struct ClaudeBridgeApp: App {
 
         Window("Claude Bridge Settings", id: WindowID.settings) {
             SettingsView(state: state)
-                .frame(minWidth: 780, minHeight: 520)
+                .frame(minWidth: 1100, minHeight: 700)
         }
         .windowResizability(.contentMinSize)
-        .defaultSize(width: 860, height: 600)
+        .defaultSize(width: 1200, height: 800)
 
         Window("Request Log", id: WindowID.log) {
             LogView(state: state)
