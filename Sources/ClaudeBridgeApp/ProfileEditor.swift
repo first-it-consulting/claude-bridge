@@ -11,121 +11,116 @@ struct ProfileEditor: View {
     @State private var discovering = false
     @State private var discovery: AppState.DiscoveryResult?
 
+    // Not a grouped `Form`: on current macOS that style centres its sections
+    // in a column of roughly 700pt however wide the window is, and the model
+    // table — five columns of long model names — needs the whole width. These
+    // cards reproduce the grouped look and fill the window instead.
     var body: some View {
-        Form {
-            Section("Connection") {
-                TextField("Name", text: $profile.name)
-
-                Picker("API format", selection: $profile.backend.kind) {
-                    Text("OpenAI-compatible").tag(BackendKind.openai)
-                    Text("Anthropic-compatible").tag(BackendKind.anthropic)
-                }
-                .help("OpenAI backends are translated. Anthropic backends are passed through untouched, which preserves prompt caching.")
-
-                TextField("Base URL", text: $profile.backend.baseURL)
-                    .textContentType(.URL)
-                    .autocorrectionDisabled()
-
-                Text(pathHint)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Picker("Auth", selection: $profile.backend.authScheme) {
-                    ForEach(AuthScheme.allCases, id: \.self) { scheme in
-                        Text(scheme.displayName).tag(scheme)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                SettingsCard("Connection") {
+                    SettingsRow("Name") {
+                        TextField("Name", text: $profile.name)
+                            .settingsField()
                     }
-                }
+                    Divider()
+                    SettingsRow("API format") {
+                        Picker("API format", selection: $profile.backend.kind) {
+                            Text("OpenAI-compatible").tag(BackendKind.openai)
+                            Text("Anthropic-compatible").tag(BackendKind.anthropic)
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                    }
+                    .help("OpenAI backends are translated. Anthropic backends are passed through untouched, which preserves prompt caching.")
+                    Divider()
+                    SettingsRow("Base URL") {
+                        TextField("Base URL", text: $profile.backend.baseURL)
+                            .textContentType(.URL)
+                            .autocorrectionDisabled()
+                            .settingsField()
+                    }
+                    Text(pathHint)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.bottom, 8)
+                    Divider()
+                    SettingsRow("Auth") {
+                        Picker("Auth", selection: $profile.backend.authScheme) {
+                            ForEach(AuthScheme.allCases, id: \.self) { scheme in
+                                Text(scheme.displayName).tag(scheme)
+                            }
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                    }
 
-                if profile.backend.authScheme != .none {
-                    SecureField("API key", text: $apiKey)
-                        .onSubmit(saveKey)
-                        .onChange(of: apiKey) { _, _ in saveKey() }
-                } else if profile.backend.keychainAccount != nil {
-                    // A leftover from when this profile did use a key. It is
-                    // never read while auth is off, but it is still sitting in
-                    // the keychain.
-                    LabeledContent("Stored key") {
-                        HStack {
+                    if profile.backend.authScheme != .none {
+                        Divider()
+                        SettingsRow("API key") {
+                            SecureField("API key", text: $apiKey)
+                                .settingsField()
+                                .onSubmit(saveKey)
+                                .onChange(of: apiKey) { _, _ in saveKey() }
+                        }
+                    } else if profile.backend.keychainAccount != nil {
+                        // A leftover from when this profile did use a key. It is
+                        // never read while auth is off, but it is still sitting in
+                        // the keychain.
+                        Divider()
+                        SettingsRow("Stored key") {
                             Text("Unused — this backend needs no credential")
                                 .foregroundStyle(.secondary)
-                            Spacer()
                             Button("Forget") { state.forgetStoredKey(for: profile.id) }
                         }
                     }
-                }
 
-                Picker("Reasoning output", selection: $profile.backend.reasoningMode) {
-                    ForEach(ReasoningMode.allCases, id: \.self) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                }
-                .help("Reasoning models emit a scratchpad alongside their answer. Anthropic thinking blocks are signed and cannot be forged, so the scratchpad is either dropped or shown as ordinary text.")
-                .disabled(profile.backend.kind == .anthropic)
-            }
-
-            Section {
-                HStack(spacing: 10) {
-                    Button("Test Connection") { Task { await test() } }
-                    HealthBadge(health: health)
-                    Spacer()
-                }
-            }
-
-            Section {
-                if let unavailable = discovery?.unavailable, !unavailable.isEmpty {
-                    unavailableBanner(unavailable)
-                }
-                ModelTable(profile: $profile, served: state.servedModels(for: profile.id))
-            } header: {
-                HStack {
-                    Text("Models")
-                    Spacer()
-                    if let summary = discoverySummary {
-                        Text(summary)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Button {
-                        Task { await discover() }
-                    } label: {
-                        if discovering {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Label("Discover", systemImage: "arrow.clockwise")
-                        }
-                    }
-                    .disabled(discovering)
-                    Menu {
-                        let known = state.servedModels(for: profile.id) ?? []
-                        if !known.isEmpty {
-                            Section("Served by this backend") {
-                                ForEach(known.sorted(), id: \.self) { id in
-                                    Button(id) { addModel(id) }
-                                }
+                    Divider()
+                    SettingsRow("Reasoning output") {
+                        Picker("Reasoning output", selection: $profile.backend.reasoningMode) {
+                            ForEach(ReasoningMode.allCases, id: \.self) { mode in
+                                Text(mode.displayName).tag(mode)
                             }
                         }
-                        Button("Custom…") { addModel("") }
-                    } label: {
-                        Label("Add", systemImage: "plus")
+                        .labelsHidden()
+                        .fixedSize()
                     }
-                    .fixedSize()
+                    .help("Reasoning models emit a scratchpad alongside their answer. Anthropic thinking blocks are signed and cannot be forged, so the scratchpad is either dropped or shown as ordinary text.")
+                    .disabled(profile.backend.kind == .anthropic)
                 }
-            } footer: {
-                Text("""
-                    Tier decides which Claude family a model stands in for. It is also what \
-                    gets the model into Claude Desktop at all: models are advertised under \
-                    their tier name, because Claude Desktop rejects ids containing a \
-                    non-Anthropic vendor name. Your model's real name is what you see in \
-                    the picker. Tier also decides the work it gets — sub-agents go to Haiku, \
-                    the main conversation to whichever tier you select in Claude Desktop. \
-                    The same model can back several tiers.
-                    """)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+
+                SettingsCard {
+                    HStack(spacing: 10) {
+                        Button("Test Connection") { Task { await test() } }
+                        HealthBadge(health: health)
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                }
+
+                SettingsCard {
+                    if let unavailable = discovery?.unavailable, !unavailable.isEmpty {
+                        unavailableBanner(unavailable)
+                        Divider()
+                    }
+                    ModelTable(profile: $profile, served: state.servedModels(for: profile.id))
+                } header: {
+                    modelsHeader
+                } footer: {
+                    Text("""
+                        Tier decides which Claude family a model stands in for. It is also what \
+                        gets the model into Claude Desktop at all: models are advertised under \
+                        their tier name, because Claude Desktop rejects ids containing a \
+                        non-Anthropic vendor name. Your model's real name is what you see in \
+                        the picker. Tier also decides the work it gets — sub-agents go to Haiku, \
+                        the main conversation to whichever tier you select in Claude Desktop. \
+                        The same model can back several tiers.
+                        """)
+                }
             }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .formStyle(.grouped)
-        .frame(maxWidth: .infinity)
         .task(id: profile.id) {
             // Same reasoning as AppState.apiKey(for:): do not prompt for a
             // secret this profile has no use for.
@@ -141,6 +136,42 @@ struct ProfileEditor: View {
         // serve; keeping the old set would flag exactly the wrong rows.
         .onChange(of: profile.backend.baseURL) { _, _ in invalidateDiscovery() }
         .onChange(of: profile.backend.kind) { _, _ in invalidateDiscovery() }
+    }
+
+    private var modelsHeader: some View {
+        HStack {
+            Text("Models")
+            Spacer()
+            if let summary = discoverySummary {
+                Text(summary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Button {
+                Task { await discover() }
+            } label: {
+                if discovering {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Label("Discover", systemImage: "arrow.clockwise")
+                }
+            }
+            .disabled(discovering)
+            Menu {
+                let known = state.servedModels(for: profile.id) ?? []
+                if !known.isEmpty {
+                    Section("Served by this backend") {
+                        ForEach(known.sorted(), id: \.self) { id in
+                            Button(id) { addModel(id) }
+                        }
+                    }
+                }
+                Button("Custom…") { addModel("") }
+            } label: {
+                Label("Add", systemImage: "plus")
+            }
+            .fixedSize()
+        }
     }
 
     private var pathHint: String {
@@ -227,6 +258,87 @@ struct ProfileEditor: View {
             .controlSize(.small)
         }
         .padding(.vertical, 4)
+    }
+}
+
+/// A titled, rounded group of rows — the grouped-form look without the
+/// grouped form's fixed column width.
+struct SettingsCard<Content: View, Header: View, Footer: View>: View {
+    @ViewBuilder var content: Content
+    @ViewBuilder var header: Header
+    @ViewBuilder var footer: Footer
+
+    init(
+        @ViewBuilder content: () -> Content,
+        @ViewBuilder header: () -> Header,
+        @ViewBuilder footer: () -> Footer
+    ) {
+        self.content = content()
+        self.header = header()
+        self.footer = footer()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            header
+                .font(.headline)
+                .padding(.horizontal, 10)
+            VStack(alignment: .leading, spacing: 0) {
+                content
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.quinary, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator.opacity(0.6)))
+            footer
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 10)
+        }
+    }
+}
+
+extension SettingsCard where Header == EmptyView, Footer == EmptyView {
+    init(@ViewBuilder content: () -> Content) {
+        self.init(content: content, header: { EmptyView() }, footer: { EmptyView() })
+    }
+}
+
+extension SettingsCard where Header == Text, Footer == EmptyView {
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.init(content: content, header: { Text(title) }, footer: { EmptyView() })
+    }
+}
+
+/// Label on the left, control on the right, as a grouped form lays out a row.
+struct SettingsRow<Control: View>: View {
+    let label: String
+    @ViewBuilder var control: Control
+
+    init(_ label: String, @ViewBuilder control: () -> Control) {
+        self.label = label
+        self.control = control()
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(label)
+            Spacer(minLength: 24)
+            control
+        }
+        .padding(.vertical, 8)
+    }
+}
+
+private extension View {
+    /// A borderless, right-aligned text field that grows up to a readable width.
+    func settingsField() -> some View {
+        labelsHidden()
+            .textFieldStyle(.plain)
+            .multilineTextAlignment(.trailing)
+            .frame(maxWidth: 480)
     }
 }
 
@@ -318,9 +430,13 @@ private struct ModelRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            // Outside a Form a Toggle defaults to a checkbox; the switch is
+            // what this table has always shown.
             Toggle("", isOn: $model.enabled)
                 .labelsHidden()
-                .frame(width: 26)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .frame(width: 32)
 
             HStack(spacing: 4) {
                 if isUnavailable {
@@ -328,7 +444,11 @@ private struct ModelRow: View {
                         .foregroundStyle(.orange)
                         .help("This backend did not list this model")
                 }
-                TextField("model-id", text: $model.upstreamID)
+                // Inside a grouped Form a titled TextField renders its title
+                // as a row label and squeezes the field itself to nothing, so
+                // the hint goes in `prompt` and the label stays hidden.
+                TextField("Model ID", text: $model.upstreamID, prompt: Text("model-id"))
+                    .labelsHidden()
                     .textFieldStyle(.plain)
                     .autocorrectionDisabled()
                 if !choices.isEmpty {
@@ -350,10 +470,11 @@ private struct ModelRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            TextField(model.upstreamID, text: Binding(
+            TextField("Shown as", text: Binding(
                 get: { model.displayName ?? "" },
                 set: { model.displayName = $0.isEmpty ? nil : $0 }
-            ))
+            ), prompt: Text(model.upstreamID))
+            .labelsHidden()
             .textFieldStyle(.plain)
             .foregroundStyle(.secondary)
             .frame(minWidth: 140, maxWidth: .infinity, alignment: .leading)
@@ -364,7 +485,7 @@ private struct ModelRow: View {
                 }
             }
             .labelsHidden()
-            .frame(width: 96)
+            .frame(width: 100, alignment: .leading)
 
             Toggle("", isOn: Binding(
                 get: { model.isFamilyDefault },
@@ -381,7 +502,9 @@ private struct ModelRow: View {
                 }
             ))
             .labelsHidden()
-            .frame(width: 52)
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .frame(width: 56)
             .help("The model Claude Desktop uses for this tier")
 
             Button {
