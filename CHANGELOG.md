@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Update status in the status menu.** The menu shows the installed version
+  and, when a newer release exists, an "Update to x.y.z…" item that opens the
+  download, plus "Check for Updates". Settings lists the installed and latest
+  versions with the same two buttons, and the app re-checks every six hours
+  instead of only at launch.
+
 ### Fixed
 
 - **The Update button downloads the release.** It pointed at GitHub's API

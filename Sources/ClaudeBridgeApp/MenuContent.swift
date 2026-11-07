@@ -21,9 +21,11 @@ struct MenuContent: View {
 
         Divider()
 
+        claudeDesktopSection
+
         Divider()
 
-        claudeDesktopSection
+        updateSection
 
         Divider()
 
@@ -52,6 +54,26 @@ struct MenuContent: View {
             }
         }
         .keyboardShortcut("q")
+    }
+
+    /// Installed and latest version, and a one-click way to the new one.
+    @ViewBuilder
+    private var updateSection: some View {
+        Section("Updates") {
+            if state.updateAvailable, let version = state.updateVersion {
+                Button("Update to \(version)… (installed \(state.installedVersion))") {
+                    state.installUpdate()
+                }
+            } else if state.updateChecking {
+                Text("Checking for updates…")
+            } else if state.updateError != nil {
+                Text("Could not check for updates · \(state.installedVersion)")
+            } else {
+                Text("Up to date · \(state.installedVersion)")
+            }
+            Button("Check for Updates") { state.checkForUpdates() }
+                .disabled(state.updateChecking)
+        }
     }
 
     /// One click per destination.
