@@ -50,9 +50,10 @@ public enum AppUpdateChecker {
     /// than "we are up to date".
     public static func check(currentVersion: String) async -> Result? {
         do {
-            let data = try await data(from: baseURL.appendingPathComponent(
-                "/repos/\(repoOwner)/\(repoName)/releases/latest"
-            ))
+            let url = baseURL.appendingPathComponent(
+                "repos/\(repoOwner)/\(repoName)/releases/latest"
+            )
+            let data = try await data(from: url, userAgentVersion: currentVersion)
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             guard let tagName = json?["tag_name"] as? String,
                   let assets = json?["assets"] as? [[String: Any]] else {
@@ -60,40 +61,36 @@ public enum AppUpdateChecker {
             }
 
             let latestVersion = tagName.hasPrefix("v") ? String(tagName.dropFirst()) : tagName
-            let dmgs = assets.compactMap { $0["name"] as? String }
-                .filter { $0.hasSuffix(".dmg") }
-            let downloadURL = dmgs.first.map { name in
-                baseURL.appendingPathComponent(
-                    "/repos/\(repoOwner)/\(repoName)/releases/assets"
-                ).appendingPathComponent(name)
-            }
+            // The asset's own `browser_download_url` is the only usable link:
+            // the API's `releases/assets/{id}` endpoint takes a numeric id, not
+            // a file name, and answers JSON rather than the file. Fall back to
+            // the release page so the button always leads somewhere real.
+            let dmgURL = assets
+                .first { ($0["name"] as? String)?.hasSuffix(".dmg") == true }
+                .flatMap { $0["browser_download_url"] as? String }
+                .flatMap(URL.init(string:))
+            let pageURL = (json?["html_url"] as? String).flatMap(URL.init(string:))
 
             return Result(
                 available: VersionComparator.isNewer(latestVersion, currentVersion),
                 version: latestVersion,
-                downloadURL: downloadURL
+                downloadURL: dmgURL ?? pageURL
             )
         } catch {
             return nil
         }
     }
 
-    private static func data(from url: URL) async throws -> Data {
+    private static func data(from url: URL, userAgentVersion: String) async throws -> Data {
         var request = URLRequest(url: url, timeoutInterval: 10)
-        request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
-        request.setValue("claude-bridge/\(currentVersion)", forHTTPHeaderField: "User-Agent")
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("claude-bridge/\(userAgentVersion)", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else { return data }
         guard (200...299).contains(httpResponse.statusCode) else {
             throw URLError(.badServerResponse)
         }
         return data
-    }
-
-    private static var currentVersion: String {
-        guard let value = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
-              !value.isEmpty else { return "0.0.0" }
-        return value
     }
 }
 
@@ -137,8 +134,8 @@ enum VersionComparator {
                 if let aNum = Int(aPart), let bNum = Int(bPart) {
                     if aNum != bNum { return aNum < bNum ? .orderedAscending : .orderedDescending }
                 } else {
-                    if let aNum = Int(aPart) { return .orderedDescending }
-                    if let bNum = Int(bPart) { return .orderedAscending }
+                    if Int(aPart) != nil { return .orderedDescending }
+                    if Int(bPart) != nil { return .orderedAscending }
                     if aPart != bPart { return aPart.compare(bPart) }
                 }
             }
