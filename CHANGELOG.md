@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Update status in the status menu.** The menu shows the installed version
+  and, when a newer release exists, an "Update to x.y.z…" item that opens the
+  download, plus "Check for Updates". Settings lists the installed and latest
+  versions with the same two buttons, and the app re-checks every six hours
+  instead of only at launch.
+
+### Fixed
+
+- **The Update button downloads the release.** It pointed at GitHub's API
+  `releases/assets/<file name>` endpoint, which takes a numeric id and answered
+  404. It now uses the asset's own download link, and falls back to the release
+  page when a release has no DMG.
+- **The profile editor uses the whole Settings window.** The model table's
+  ID and "Shown as" fields drew their placeholder as a row label, squeezing
+  the text into a narrow wrapped column, and the header no longer lined up
+  with the rows. The grouped form also kept every section in a ~700pt column
+  however wide the window was; the editor now lays out its own full-width
+  sections.
+
 ## [0.4.0] - 2026-11-06
 
 ### Added

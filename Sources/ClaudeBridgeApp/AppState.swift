@@ -41,6 +41,7 @@ final class AppState {
     private(set) var installedVersion = AppInfo.version
 
     private var updateCheckTask: Task<(), Never>?
+    private var periodicUpdateTask: Task<(), Never>?
 
     struct Notice: Identifiable, Equatable {
         enum Kind { case info, warning, error }
@@ -109,11 +110,12 @@ final class AppState {
         await refreshHealth()
         watchClaudeConfig()
         refreshLoginItemState()
-        checkForUpdates()
+        startPeriodicUpdateChecks()
     }
 
     func onQuit() async {
         configWatch?.cancel()
+        periodicUpdateTask?.cancel()
         configWatch = nil
         await server.shutdown()
         try? store.save(settings)
@@ -613,6 +615,18 @@ final class AppState {
             }
         }
         updateCheckTask = task
+    }
+
+    /// A menu bar app stays running for weeks, so checking only at launch
+    /// would leave a new release unnoticed until the next login.
+    private func startPeriodicUpdateChecks() {
+        periodicUpdateTask?.cancel()
+        periodicUpdateTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await MainActor.run { self?.checkForUpdates() }
+                try? await Task.sleep(for: .seconds(6 * 60 * 60))
+            }
+        }
     }
 
     func installUpdate() {

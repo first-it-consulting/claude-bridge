@@ -152,36 +152,36 @@ struct GeneralSettingsView: View {
                 )
             }
 
-            Section("Update") {
-                HStack {
+            Section("Updates") {
+                LabeledContent("Installed version", value: state.installedVersion)
+                LabeledContent("Latest release") {
                     if state.updateChecking {
-                        ProgressView()
-                            .frame(height: 14)
-                        Text("Checking…")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text("Checking…")
+                        }
+                        .foregroundStyle(.secondary)
                     } else if let error = state.updateError {
-                        Text(error)
-                            .font(.callout)
-                            .foregroundStyle(.red)
-                    } else if state.updateAvailable, let version = state.updateVersion {
-                        Label("Update available · \(state.installedVersion) → \(version)", systemImage: "arrow.down.circle.fill")
-                            .font(.callout)
-                            .tint(.accentColor)
-                        Spacer()
-                        Button("Update") { state.installUpdate() }
-                    } else if let version = state.updateVersion {
-                        Label("Up to date · \(state.installedVersion) (\(version))", systemImage: "checkmark.seal.fill")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Check now") { state.checkForUpdates() }
+                        Text(error).foregroundStyle(.red)
                     } else {
-                        Label("Up to date · \(state.installedVersion)", systemImage: "checkmark.seal.fill")
-                            .font(.callout)
+                        Text(state.updateVersion ?? "Unknown")
                             .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Check now") { state.checkForUpdates() }
+                    }
+                }
+                HStack {
+                    if state.updateAvailable, let version = state.updateVersion {
+                        Label("Version \(version) is available", systemImage: "arrow.down.circle.fill")
+                            .foregroundStyle(.tint)
+                    } else if state.updateVersion != nil, state.updateError == nil {
+                        Label("Claude Bridge is up to date", systemImage: "checkmark.seal.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Check for Updates") { state.checkForUpdates() }
+                        .disabled(state.updateChecking)
+                    if state.updateAvailable, let version = state.updateVersion {
+                        Button("Update to \(version)") { state.installUpdate() }
+                            .buttonStyle(.borderedProminent)
                     }
                 }
             }
