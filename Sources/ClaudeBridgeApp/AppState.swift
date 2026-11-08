@@ -45,6 +45,7 @@ final class AppState {
 
     private var updateCheckTask: Task<(), Never>?
     private var periodicUpdateTask: Task<(), Never>?
+    private var announceNextUpdateResult = false
 
     struct Notice: Identifiable, Equatable {
         enum Kind { case info, warning, error }
@@ -604,18 +605,25 @@ final class AppState {
 
     // MARK: - Update checking
 
-    func checkForUpdates() {
-        updateCheckTask?.cancel()
+    /// Starts a check unless one is already running.
+    ///
+    /// `announce` is for a check the user asked for from the menu: the menu
+    /// closes on click and the background check changes nothing visible, so
+    /// without a dialog the item looked dead. Joining a running check rather
+    /// than restarting it also keeps an automatic check (Settings opening, the
+    /// six-hourly timer) from cancelling the one whose answer was promised.
+    func checkForUpdates(announce: Bool = false) {
+        if announce { announceNextUpdateResult = true }
+        guard !updateChecking else { return }
         updateChecking = true
         updateError = nil
-        let task = Task { [self] in
+        updateCheckTask = Task { [self] in
             let outcome: Result<AppUpdateChecker.Result, Error>
             do {
                 outcome = .success(try await AppUpdateChecker.fetch(currentVersion: AppInfo.version))
             } catch {
                 outcome = .failure(error)
             }
-            guard !Task.isCancelled else { return }
             updateChecking = false
             switch outcome {
             case .success(let result):
@@ -629,8 +637,33 @@ final class AppState {
                 updateError = "Could not check for updates: \(reason)"
                 updateLog.error("Update check failed: \(reason, privacy: .public)")
             }
+            if announceNextUpdateResult {
+                announceNextUpdateResult = false
+                announceUpdateResult(outcome)
+            }
         }
-        updateCheckTask = task
+    }
+
+    private func announceUpdateResult(_ outcome: Result<AppUpdateChecker.Result, Error>) {
+        let alert = NSAlert()
+        switch outcome {
+        case .success(let result) where result.available:
+            alert.messageText = "Claude Bridge \(result.version ?? "") is available"
+            alert.informativeText = "You have \(installedVersion). Download the new version now?"
+            alert.addButton(withTitle: "Download")
+            alert.addButton(withTitle: "Later")
+        case .success:
+            alert.messageText = "Claude Bridge is up to date"
+            alert.informativeText = "\(installedVersion) is the latest version."
+        case .failure(let error):
+            alert.alertStyle = .warning
+            alert.messageText = "Could not check for updates"
+            alert.informativeText = error.localizedDescription
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn, updateAvailable {
+            installUpdate()
+        }
     }
 
     /// A menu bar app stays running for weeks, so checking only at launch

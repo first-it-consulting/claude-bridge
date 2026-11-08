@@ -71,8 +71,9 @@ struct MenuContent: View {
             } else {
                 Text("Up to date · \(state.installedVersion)")
             }
-            Button("Check for Updates") { state.checkForUpdates() }
-                .disabled(state.updateChecking)
+            // Not disabled while checking: clicking joins the running check
+            // and still gets its answer in a dialog.
+            Button("Check for Updates…") { state.checkForUpdates(announce: true) }
         }
     }
 

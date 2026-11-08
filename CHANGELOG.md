@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-08
+
+### Fixed
+
+- **"Check for Updates…" in the status menu answers.** The menu closed on
+  click and the result appeared nowhere, so the item looked dead; it now ends
+  in a dialog — update available with a Download button, up to date, or why
+  the check failed. Clicking while a check runs joins it instead of being
+  cancelled by it.
+- **Update checks are quicker on a bad GitHub edge.** The github.com redirect
+  and the API are asked at once, so a server that accepts the connection and
+  never answers costs one timeout rather than two, and checks bypass the
+  local HTTP cache.
+
 ## [0.5.0] - 2026-11-08
 
 ### Added
@@ -189,7 +203,8 @@ downloads it. Everything below shipped in 0.1.1 instead.
 - Release builds are not notarised until Apple Developer credentials are
   configured, so macOS asks for confirmation on first launch.
 
-[Unreleased]: https://github.com/first-it-consulting/claude-bridge/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/first-it-consulting/claude-bridge/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/first-it-consulting/claude-bridge/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/first-it-consulting/claude-bridge/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/first-it-consulting/claude-bridge/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/first-it-consulting/claude-bridge/compare/v0.3.1...v0.3.2

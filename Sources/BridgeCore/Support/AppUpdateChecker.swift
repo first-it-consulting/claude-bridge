@@ -64,21 +64,33 @@ public enum AppUpdateChecker {
 
     /// Fetches the latest release and decides whether an update is available.
     ///
-    /// Asks github.com's `releases/latest` redirect first and the REST API only
-    /// if that fails. The redirect is served by the website, not the API: it
+    /// Asks github.com's `releases/latest` redirect and the REST API. The redirect is served by the website, not the API: it
     /// kept answering in a tenth of a second while `api.github.com` returned
     /// 504 after fifteen, and it does not count against the API's limit of 60
     /// unauthenticated requests an hour, which every Mac behind one NAT shares.
     ///
     /// Throws `CheckError` saying why when it cannot tell — the caller should
     /// treat that as "no update to report", not "we are up to date".
+    ///
+    /// Both are asked at once and the first answer wins. One after the other,
+    /// a github.com edge that accepts the connection and then never answers —
+    /// which some did — cost the full timeout before the API was even tried.
     public static func fetch(currentVersion: String) async throws -> Result {
-        do {
-            return try await fetchFromReleasePage(currentVersion: currentVersion)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            return try await fetchFromAPI(currentVersion: currentVersion)
+        try await withThrowingTaskGroup(of: Result.self) { group in
+            group.addTask { try await fetchFromReleasePage(currentVersion: currentVersion) }
+            group.addTask { try await fetchFromAPI(currentVersion: currentVersion) }
+            var firstError: Error?
+            while !group.isEmpty {
+                do {
+                    if let result = try await group.next() {
+                        group.cancelAll()
+                        return result
+                    }
+                } catch {
+                    firstError = firstError ?? error
+                }
+            }
+            throw firstError ?? CheckError.malformedResponse
         }
     }
 
@@ -86,6 +98,7 @@ public enum AppUpdateChecker {
     static func fetchFromReleasePage(currentVersion: String) async throws -> Result {
         var request = URLRequest(
             url: webURL.appendingPathComponent("\(repoOwner)/\(repoName)/releases/latest"),
+            cachePolicy: .reloadIgnoringLocalCacheData,
             timeoutInterval: timeout
         )
         // HEAD: the redirect is the whole answer, and URLSession follows it
@@ -170,7 +183,7 @@ public enum AppUpdateChecker {
     }
 
     private static func data(from url: URL, userAgentVersion: String) async throws -> Data {
-        var request = URLRequest(url: url, timeoutInterval: timeout)
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: timeout)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("claude-bridge/\(userAgentVersion)", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
