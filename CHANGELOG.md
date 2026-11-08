@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Update checks are quicker on a bad GitHub edge.** The github.com redirect
+  and the API are asked at once, so a server that accepts the connection and
+  never answers costs one timeout rather than two, and checks bypass the
+  local HTTP cache.
+
 ## [0.5.0] - 2026-11-08
 
 ### Added
