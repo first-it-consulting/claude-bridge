@@ -42,58 +42,147 @@ public enum AppUpdateChecker {
     private static let repoOwner = "first-it-consulting"
     private static let repoName = "claude-bridge"
     private static let baseURL = URL(string: "https://api.github.com")!
+    private static let webURL = URL(string: "https://github.com")!
+    private static let timeout: TimeInterval = 15
+
+    /// Why a check failed, worded for the Settings window.
+    public enum CheckError: Error, LocalizedError, Equatable {
+        case http(status: Int)
+        case rateLimited
+        case malformedResponse
+        case network(String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .http(let status): return "GitHub answered HTTP \(status)"
+            case .rateLimited: return "GitHub rate limit reached — try again later"
+            case .malformedResponse: return "GitHub sent an unexpected response"
+            case .network(let reason): return reason
+            }
+        }
+    }
 
     /// Fetches the latest release and decides whether an update is available.
     ///
-    /// Returns nil when the network request failed or the response could not be
-    /// parsed — the caller should treat that as "no update to report" rather
-    /// than "we are up to date".
-    public static func check(currentVersion: String) async -> Result? {
+    /// Asks github.com's `releases/latest` redirect first and the REST API only
+    /// if that fails. The redirect is served by the website, not the API: it
+    /// kept answering in a tenth of a second while `api.github.com` returned
+    /// 504 after fifteen, and it does not count against the API's limit of 60
+    /// unauthenticated requests an hour, which every Mac behind one NAT shares.
+    ///
+    /// Throws `CheckError` saying why when it cannot tell — the caller should
+    /// treat that as "no update to report", not "we are up to date".
+    public static func fetch(currentVersion: String) async throws -> Result {
         do {
-            let data = try await data(from: baseURL.appendingPathComponent(
-                "/repos/\(repoOwner)/\(repoName)/releases/latest"
-            ))
-            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-            guard let tagName = json?["tag_name"] as? String,
-                  let assets = json?["assets"] as? [[String: Any]] else {
-                return nil
-            }
-
-            let latestVersion = tagName.hasPrefix("v") ? String(tagName.dropFirst()) : tagName
-            let dmgs = assets.compactMap { $0["name"] as? String }
-                .filter { $0.hasSuffix(".dmg") }
-            let downloadURL = dmgs.first.map { name in
-                baseURL.appendingPathComponent(
-                    "/repos/\(repoOwner)/\(repoName)/releases/assets"
-                ).appendingPathComponent(name)
-            }
-
-            return Result(
-                available: VersionComparator.isNewer(latestVersion, currentVersion),
-                version: latestVersion,
-                downloadURL: downloadURL
-            )
+            return try await fetchFromReleasePage(currentVersion: currentVersion)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
-            return nil
+            return try await fetchFromAPI(currentVersion: currentVersion)
         }
     }
 
-    private static func data(from url: URL) async throws -> Data {
-        var request = URLRequest(url: url, timeoutInterval: 10)
-        request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
+    /// The tag `releases/latest` redirects to, e.g. `…/releases/tag/v0.4.0`.
+    static func fetchFromReleasePage(currentVersion: String) async throws -> Result {
+        var request = URLRequest(
+            url: webURL.appendingPathComponent("\(repoOwner)/\(repoName)/releases/latest"),
+            timeoutInterval: timeout
+        )
+        // HEAD: the redirect is the whole answer, and URLSession follows it
+        // without downloading the release page's HTML.
+        request.httpMethod = "HEAD"
         request.setValue("claude-bridge/\(currentVersion)", forHTTPHeaderField: "User-Agent")
+        let response: URLResponse
+        do {
+            (_, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw CheckError.network(error.localizedDescription)
+        }
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw CheckError.http(status: http.statusCode)
+        }
+        guard let finalURL = response.url, let tag = releaseTag(from: finalURL) else {
+            throw CheckError.malformedResponse
+        }
+        let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+        return Result(
+            available: VersionComparator.isNewer(version, currentVersion),
+            version: version,
+            downloadURL: dmgURL(tag: tag, version: version)
+        )
+    }
+
+    /// The tag in a `…/releases/tag/<tag>` URL; nil for anything else, which
+    /// is what `releases/latest` serves when a repository has no release yet.
+    static func releaseTag(from url: URL) -> String? {
+        let parts = url.pathComponents
+        guard parts.count >= 2, parts[parts.count - 2] == "tag",
+              let tag = parts.last, !tag.isEmpty else { return nil }
+        return tag
+    }
+
+    /// The DMG the release workflow attaches: `ClaudeBridge-<version>.dmg`.
+    static func dmgURL(tag: String, version: String) -> URL {
+        webURL.appendingPathComponent(
+            "\(repoOwner)/\(repoName)/releases/download/\(tag)/ClaudeBridge-\(version).dmg"
+        )
+    }
+
+    static func fetchFromAPI(currentVersion: String) async throws -> Result {
+        let url = baseURL.appendingPathComponent(
+            "repos/\(repoOwner)/\(repoName)/releases/latest"
+        )
+        let data: Data
+        do {
+            data = try await self.data(from: url, userAgentVersion: currentVersion)
+        } catch let error as CheckError {
+            throw error
+        } catch {
+            throw CheckError.network(error.localizedDescription)
+        }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tagName = json["tag_name"] as? String,
+              let assets = json["assets"] as? [[String: Any]] else {
+            throw CheckError.malformedResponse
+        }
+
+        let latestVersion = tagName.hasPrefix("v") ? String(tagName.dropFirst()) : tagName
+        // The asset's own `browser_download_url` is the only usable link:
+        // the API's `releases/assets/{id}` endpoint takes a numeric id, not
+        // a file name, and answers JSON rather than the file. Fall back to
+        // the release page so the button always leads somewhere real.
+        let dmgURL = assets
+            .first { ($0["name"] as? String)?.hasSuffix(".dmg") == true }
+            .flatMap { $0["browser_download_url"] as? String }
+            .flatMap(URL.init(string:))
+        let pageURL = (json["html_url"] as? String).flatMap(URL.init(string:))
+
+        return Result(
+            available: VersionComparator.isNewer(latestVersion, currentVersion),
+            version: latestVersion,
+            downloadURL: dmgURL ?? pageURL
+        )
+    }
+
+    /// `fetch` with the reason discarded: nil when the check failed.
+    public static func check(currentVersion: String) async -> Result? {
+        try? await fetch(currentVersion: currentVersion)
+    }
+
+    private static func data(from url: URL, userAgentVersion: String) async throws -> Data {
+        var request = URLRequest(url: url, timeoutInterval: timeout)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("claude-bridge/\(userAgentVersion)", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else { return data }
         guard (200...299).contains(httpResponse.statusCode) else {
-            throw URLError(.badServerResponse)
+            if [403, 429].contains(httpResponse.statusCode),
+               httpResponse.value(forHTTPHeaderField: "x-ratelimit-remaining") == "0" {
+                throw CheckError.rateLimited
+            }
+            throw CheckError.http(status: httpResponse.statusCode)
         }
         return data
-    }
-
-    private static var currentVersion: String {
-        guard let value = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
-              !value.isEmpty else { return "0.0.0" }
-        return value
     }
 }
 
@@ -137,8 +226,8 @@ enum VersionComparator {
                 if let aNum = Int(aPart), let bNum = Int(bPart) {
                     if aNum != bNum { return aNum < bNum ? .orderedAscending : .orderedDescending }
                 } else {
-                    if let aNum = Int(aPart) { return .orderedDescending }
-                    if let bNum = Int(bPart) { return .orderedAscending }
+                    if Int(aPart) != nil { return .orderedDescending }
+                    if Int(bPart) != nil { return .orderedAscending }
                     if aPart != bPart { return aPart.compare(bPart) }
                 }
             }

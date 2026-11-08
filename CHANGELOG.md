@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-08
+
+### Added
+
+- **Update status in the status menu.** The menu shows the installed version
+  and, when a newer release exists, an "Update to x.y.z…" item that opens the
+  download, plus "Check for Updates". Settings lists the installed and latest
+  versions with the same two buttons, and the app re-checks every six hours
+  instead of only at launch.
+
+### Fixed
+
+- **The Update button downloads the release.** It pointed at GitHub's API
+  `releases/assets/<file name>` endpoint, which takes a numeric id and answered
+  404. It now uses the asset's own download link, and falls back to the release
+  page when a release has no DMG.
+- **Update checks survive a GitHub API outage, and say why they fail.** The
+  check asks github.com's `releases/latest` redirect first, which kept
+  answering while `api.github.com` returned 504, and falls back to the API.
+  A failure now names the cause — timeout, HTTP status, rate limit — and is
+  logged under `com.claudebridge.app`, instead of a bare "Could not check".
+- **The profile editor uses the whole Settings window.** The model table's
+  ID and "Shown as" fields drew their placeholder as a row label, squeezing
+  the text into a narrow wrapped column, and the header no longer lined up
+  with the rows. The grouped form also kept every section in a ~700pt column
+  however wide the window was; the editor now lays out its own full-width
+  sections.
+- **The update check no longer waits for the keychain.** It ran last at
+  launch, behind the credential read that can sit on an authorisation prompt,
+  so after a rebuild it did not run until the prompt was answered.
+
 ## [0.4.0] - 2026-11-06
 
 ### Added
@@ -158,7 +189,9 @@ downloads it. Everything below shipped in 0.1.1 instead.
 - Release builds are not notarised until Apple Developer credentials are
   configured, so macOS asks for confirmation on first launch.
 
-[Unreleased]: https://github.com/first-it-consulting/claude-bridge/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/first-it-consulting/claude-bridge/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/first-it-consulting/claude-bridge/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/first-it-consulting/claude-bridge/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/first-it-consulting/claude-bridge/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/first-it-consulting/claude-bridge/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/first-it-consulting/claude-bridge/compare/v0.2.0...v0.3.0

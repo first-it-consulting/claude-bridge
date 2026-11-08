@@ -2,7 +2,10 @@ import AppKit
 import BridgeCore
 import Foundation
 import Observation
+import os
 import SwiftUI
+
+private let updateLog = Logger(subsystem: "com.claudebridge.app", category: "update")
 
 /// Everything the menu bar and windows read from, and the only place that
 /// coordinates the server, the profile store, and Claude Desktop's config.
@@ -41,6 +44,7 @@ final class AppState {
     private(set) var installedVersion = AppInfo.version
 
     private var updateCheckTask: Task<(), Never>?
+    private var periodicUpdateTask: Task<(), Never>?
 
     struct Notice: Identifiable, Equatable {
         enum Kind { case info, warning, error }
@@ -95,6 +99,10 @@ final class AppState {
         if settings.startServerAtLaunch {
             await startServer()
         }
+        // Before anything that touches the keychain: the update check needs no
+        // credential, and queued behind an unanswered authorisation prompt it
+        // never ran at all.
+        startPeriodicUpdateChecks()
         await pushProfileToRouter()
         // Reconcile the active profile's models with what its backend currently
         // serves on every launch, so repointing a profile at a new backend (or
@@ -109,11 +117,11 @@ final class AppState {
         await refreshHealth()
         watchClaudeConfig()
         refreshLoginItemState()
-        checkForUpdates()
     }
 
     func onQuit() async {
         configWatch?.cancel()
+        periodicUpdateTask?.cancel()
         configWatch = nil
         await server.shutdown()
         try? store.save(settings)
@@ -601,18 +609,40 @@ final class AppState {
         updateChecking = true
         updateError = nil
         let task = Task { [self] in
-            let result = await AppUpdateChecker.check(currentVersion: AppInfo.version)
+            let outcome: Result<AppUpdateChecker.Result, Error>
+            do {
+                outcome = .success(try await AppUpdateChecker.fetch(currentVersion: AppInfo.version))
+            } catch {
+                outcome = .failure(error)
+            }
             guard !Task.isCancelled else { return }
             updateChecking = false
-            if let result {
+            switch outcome {
+            case .success(let result):
                 updateAvailable = result.available
                 updateVersion = result.version
                 updateDownloadURL = result.downloadURL
-            } else {
-                updateError = "Could not check for updates"
+            case .failure(let error):
+                // Said in full and logged: "could not check" alone left no way
+                // to tell a rate limit from a firewall from a parsing bug.
+                let reason = error.localizedDescription
+                updateError = "Could not check for updates: \(reason)"
+                updateLog.error("Update check failed: \(reason, privacy: .public)")
             }
         }
         updateCheckTask = task
+    }
+
+    /// A menu bar app stays running for weeks, so checking only at launch
+    /// would leave a new release unnoticed until the next login.
+    private func startPeriodicUpdateChecks() {
+        periodicUpdateTask?.cancel()
+        periodicUpdateTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await MainActor.run { self?.checkForUpdates() }
+                try? await Task.sleep(for: .seconds(6 * 60 * 60))
+            }
+        }
     }
 
     func installUpdate() {
