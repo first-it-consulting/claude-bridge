@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `releases/assets/<file name>` endpoint, which takes a numeric id and answered
   404. It now uses the asset's own download link, and falls back to the release
   page when a release has no DMG.
+- **Update checks survive a GitHub API outage, and say why they fail.** The
+  check asks github.com's `releases/latest` redirect first, which kept
+  answering while `api.github.com` returned 504, and falls back to the API.
+  A failure now names the cause — timeout, HTTP status, rate limit — and is
+  logged under `com.claudebridge.app`, instead of a bare "Could not check".
 - **The profile editor uses the whole Settings window.** The model table's
   ID and "Shown as" fields drew their placeholder as a row label, squeezing
   the text into a narrow wrapped column, and the header no longer lined up

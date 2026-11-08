@@ -80,6 +80,33 @@ struct AppUpdateCheckerTests {
     }
 }
 
+@Suite("Release page redirect")
+struct ReleasePageTests {
+
+    @Test("the tag is read from the URL releases/latest redirects to")
+    func tagFromRedirect() {
+        let url = URL(string: "https://github.com/first-it-consulting/claude-bridge/releases/tag/v0.4.0")!
+        #expect(AppUpdateChecker.releaseTag(from: url) == "v0.4.0")
+    }
+
+    @Test("a repository with no release yet yields no tag", arguments: [
+        "https://github.com/first-it-consulting/claude-bridge/releases",
+        "https://github.com/first-it-consulting/claude-bridge/releases/latest",
+        "https://github.com/first-it-consulting/claude-bridge/releases/tag/",
+    ])
+    func noTag(_ string: String) {
+        #expect(AppUpdateChecker.releaseTag(from: URL(string: string)!) == nil)
+    }
+
+    @Test("the DMG link follows the release workflow's file name")
+    func dmgLink() {
+        #expect(
+            AppUpdateChecker.dmgURL(tag: "v0.5.0", version: "0.5.0").absoluteString
+                == "https://github.com/first-it-consulting/claude-bridge/releases/download/v0.5.0/ClaudeBridge-0.5.0.dmg"
+        )
+    }
+}
+
 @Suite("Version parsing edge cases")
 struct VersionParseTests {
 

@@ -2,7 +2,10 @@ import AppKit
 import BridgeCore
 import Foundation
 import Observation
+import os
 import SwiftUI
+
+private let updateLog = Logger(subsystem: "com.claudebridge.app", category: "update")
 
 /// Everything the menu bar and windows read from, and the only place that
 /// coordinates the server, the profile store, and Claude Desktop's config.
@@ -603,15 +606,25 @@ final class AppState {
         updateChecking = true
         updateError = nil
         let task = Task { [self] in
-            let result = await AppUpdateChecker.check(currentVersion: AppInfo.version)
+            let outcome: Result<AppUpdateChecker.Result, Error>
+            do {
+                outcome = .success(try await AppUpdateChecker.fetch(currentVersion: AppInfo.version))
+            } catch {
+                outcome = .failure(error)
+            }
             guard !Task.isCancelled else { return }
             updateChecking = false
-            if let result {
+            switch outcome {
+            case .success(let result):
                 updateAvailable = result.available
                 updateVersion = result.version
                 updateDownloadURL = result.downloadURL
-            } else {
-                updateError = "Could not check for updates"
+            case .failure(let error):
+                // Said in full and logged: "could not check" alone left no way
+                // to tell a rate limit from a firewall from a parsing bug.
+                let reason = error.localizedDescription
+                updateError = "Could not check for updates: \(reason)"
+                updateLog.error("Update check failed: \(reason, privacy: .public)")
             }
         }
         updateCheckTask = task
