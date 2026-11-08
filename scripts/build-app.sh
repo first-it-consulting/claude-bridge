@@ -11,6 +11,23 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="Claude Bridge"
 BUNDLE_ID="com.claudebridge.app"
 VERSION="$(cat "$ROOT/VERSION" 2>/dev/null || echo "0.1.0")"
+
+# A binary older than any source file is a leftover, not what was just built.
+# (Comparing against the start of this run would fail a repeat build with no
+# changes, which SwiftPM may satisfy without relinking.)
+require_fresh() {
+    if [[ ! -f "$1" ]]; then
+        echo "error: expected a build product at $1, found nothing" >&2
+        exit 1
+    fi
+    local newer
+    newer="$(find "$ROOT/Sources" "$ROOT/Package.swift" "$ROOT/Package.resolved" \
+        -newer "$1" -type f 2>/dev/null | head -n 1)"
+    if [[ -n "$newer" ]]; then
+        echo "error: $1 is older than $newer — refusing to package a stale binary" >&2
+        exit 1
+    fi
+}
 # Commit count as the build number: monotonic, needs no state, and tells two
 # builds of the same version apart in a bug report. Zero when the source came
 # from a tarball rather than a clone, or from a shallow CI checkout.
@@ -37,19 +54,34 @@ if [ "$CONFIG" = "release" ]; then
     # It still prints "Build complete!" before exiting non-zero, so the failure
     # reads like a success until you check the status. Per-triple builds use the
     # native build system and avoid it entirely.
-    for triple in arm64-apple-macosx x86_64-apple-macosx; do
-        swift build -c release --package-path "$ROOT" --triple "$triple"
-    done
-
+    #
+    # Never hard-code where a slice lands: ask SwiftPM. Swift 6.4's default
+    # build system writes to .build/out/Products/Release for every triple, not
+    # .build/<triple>/release, and lipo quietly joined two binaries left there
+    # by an older toolchain — a fresh bundle around months-old code. Each slice
+    # is copied out as soon as it is built, since both triples may share one
+    # output directory, and is checked for freshness and architecture.
     BUILD_DIR="$ROOT/.build/universal"
     mkdir -p "$BUILD_DIR"
+    for triple in arm64-apple-macosx x86_64-apple-macosx; do
+        arch="${triple%%-*}"
+        swift build -c release --package-path "$ROOT" --triple "$triple"
+        bin="$(swift build -c release --package-path "$ROOT" --triple "$triple" --show-bin-path)/claude-bridge"
+        require_fresh "$bin"
+        if [[ "$(lipo -archs "$bin")" != "$arch" ]]; then
+            echo "error: $bin is $(lipo -archs "$bin"), expected $arch" >&2
+            exit 1
+        fi
+        cp "$bin" "$BUILD_DIR/claude-bridge-$arch"
+    done
     lipo -create -output "$BUILD_DIR/claude-bridge" \
-        "$ROOT/.build/arm64-apple-macosx/release/claude-bridge" \
-        "$ROOT/.build/x86_64-apple-macosx/release/claude-bridge"
+        "$BUILD_DIR/claude-bridge-arm64" \
+        "$BUILD_DIR/claude-bridge-x86_64"
 else
     echo "==> Building ($CONFIG)"
     swift build -c "$CONFIG" --package-path "$ROOT"
-    BUILD_DIR="$ROOT/.build/$CONFIG"
+    BUILD_DIR="$(swift build -c "$CONFIG" --package-path "$ROOT" --show-bin-path)"
+    require_fresh "$BUILD_DIR/claude-bridge"
 fi
 
 echo "==> Assembling $APP ($VERSION build $BUILD)"
