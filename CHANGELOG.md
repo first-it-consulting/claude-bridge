@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **"Check for Updates…" in the status menu answers.** The menu closed on
+  click and the result appeared nowhere, so the item looked dead; it now ends
+  in a dialog — update available with a Download button, up to date, or why
+  the check failed. Clicking while a check runs joins it instead of being
+  cancelled by it.
 - **Update checks are quicker on a bad GitHub edge.** The github.com redirect
   and the API are asked at once, so a server that accepts the connection and
   never answers costs one timeout rather than two, and checks bypass the
