@@ -99,6 +99,10 @@ final class AppState {
         if settings.startServerAtLaunch {
             await startServer()
         }
+        // Before anything that touches the keychain: the update check needs no
+        // credential, and queued behind an unanswered authorisation prompt it
+        // never ran at all.
+        startPeriodicUpdateChecks()
         await pushProfileToRouter()
         // Reconcile the active profile's models with what its backend currently
         // serves on every launch, so repointing a profile at a new backend (or
@@ -113,7 +117,6 @@ final class AppState {
         await refreshHealth()
         watchClaudeConfig()
         refreshLoginItemState()
-        startPeriodicUpdateChecks()
     }
 
     func onQuit() async {
