@@ -10,7 +10,7 @@ let package = Package(
         .executable(name: "claude-bridged", targets: ["claude-bridged"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
+        .package(url: "https://github.com/apple/swift-nio.git", .exact("2.90.0")),
     ],
     targets: [
         .target(
