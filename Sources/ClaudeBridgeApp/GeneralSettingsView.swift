@@ -106,6 +106,15 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.orange)
                 }
 
+                if state.claudeStatus.deploymentModePinnedFirstParty,
+                   state.claudeStatus.bridgeEntryApplied {
+                    Label("""
+                        Claude Desktop has pinned its deployment mode to its own models, so it \
+                        ignores the applied entry. Picking a profile here lifts the pin.
+                        """, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                }
+
                 LabeledContent("Currently pointed at") {
                     Text(state.destinations.first(where: state.isCurrent)
                         .map(ClaudeDestinationUI.label) ?? "Nothing")

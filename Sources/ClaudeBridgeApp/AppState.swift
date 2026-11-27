@@ -459,6 +459,17 @@ final class AppState {
                     Written, but this Mac has an MDM configuration profile for Claude Desktop, \
                     which takes precedence. The bridge will not be used until that profile is removed.
                     """)
+            } else if claudeStatus.deploymentModePinnedFirstParty {
+                // Applying lifts the pin, so it only still holds when the
+                // write was skipped — Claude Desktop's settings file would not
+                // parse, and rewriting it would have cost the user their
+                // preferences. Say so rather than announce a switch that will
+                // not take.
+                notice = Notice(kind: .warning, text: """
+                    Written, but Claude Desktop's own settings file holds a first-party \
+                    deployment-mode pin that could not be lifted, so it will keep using its \
+                    own models. Check “claude_desktop_config.json” next to the config library.
+                    """)
             } else if announce {
                 notice = Notice(kind: .info, text: "Claude Desktop is pointed at the bridge. Restart it to take effect.")
             }

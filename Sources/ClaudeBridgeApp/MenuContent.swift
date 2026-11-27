@@ -91,6 +91,14 @@ struct MenuContent: View {
             } else if state.claudeStatus.managedProfilePresent {
                 Text("Managed by MDM — local config is ignored")
             } else {
+                // Reachable again after the switch if the user later picks
+                // Claude.ai in Claude Desktop's own mode chooser: our entry is
+                // still applied, so every destination here looks ticked as
+                // usual, while the app quietly stays on first-party models.
+                if state.claudeStatus.deploymentModePinnedFirstParty,
+                   state.claudeStatus.bridgeEntryApplied {
+                    Text("Claude Desktop is pinned to its own models — pick a profile to lift it")
+                }
                 ForEach(Array(state.destinations.enumerated()), id: \.offset) { _, destination in
                     Toggle(isOn: binding(for: destination)) {
                         Text(ClaudeDestinationUI.label(for: destination))
