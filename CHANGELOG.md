@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The menu and Settings say when Claude Desktop is pointed at a bridge that
+  is not running.** A stopped bridge — or one whose port was taken at launch —
+  fails every Claude Desktop request with a connection error while the app's
+  own chrome stayed passive; both surfaces now warn, and the failed-bind case
+  carries the error text.
+
 ## [0.5.2] - 2026-11-27
 
 ### Fixed

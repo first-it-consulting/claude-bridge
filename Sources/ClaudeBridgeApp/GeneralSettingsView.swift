@@ -115,6 +115,15 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.orange)
                 }
 
+                if !state.serverRunning, state.claudeStatus.bridgeEntryApplied {
+                    Label("""
+                        \(state.serverError.map { "The bridge failed to start: \($0)." } ?? "The bridge is not running.") \
+                        Claude Desktop is pointed at it, so its requests fail until the bridge listens \
+                        on port \(state.settings.port) again.
+                        """, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                }
+
                 LabeledContent("Currently pointed at") {
                     Text(state.destinations.first(where: state.isCurrent)
                         .map(ClaudeDestinationUI.label) ?? "Nothing")
