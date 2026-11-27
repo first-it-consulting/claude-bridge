@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Switching Claude Desktop to the bridge takes effect again even when its
+  deployment mode was pinned to Claude's own models.** Claude Desktop
+  remembers the choice made in its mode chooser; while that pin reads
+  "Claude.ai", every launch ignores the applied config-library entry, so a
+  bridge switch restarted Claude Desktop onto the old models. Applying a
+  library entry now lifts the pin, "Anthropic's models" sets it to match,
+  and the menu and Settings say so when the pin returns while the bridge
+  entry is applied.
+
 ## [0.5.1] - 2026-11-08
 
 ### Fixed

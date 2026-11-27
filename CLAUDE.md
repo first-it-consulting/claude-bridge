@@ -105,11 +105,11 @@ function PMe(e){ let t = e?.appliedId;
 ```
 
 Anything else yields an empty config, no `inferenceProvider`, and first-party
-inference. `applyAnthropicModels` therefore blanks `appliedId` and touches
-nothing else, so every entry survives and switching back is one `applyEntry`.
-This is undocumented behaviour of Claude Desktop's loader, so the id rule is
-pinned by a parameterised test — if a future version changes it, that test fails
-instead of the user being silently stranded on a local backend.
+inference. `applyAnthropicModels` therefore blanks `appliedId` and matches the
+deployment-mode pin below, so every entry survives and switching back is one
+`applyEntry`. This is undocumented behaviour of Claude Desktop's loader, so the
+id rule is pinned by a parameterised test — if a future version changes it, that
+test fails instead of the user being silently stranded on a local backend.
 
 The two modes are separate installs in every practical sense: first-party uses
 `~/Library/Application Support/Claude/` and logs to `~/Library/Logs/Claude/`,
@@ -118,6 +118,27 @@ accounts and history. Developer Mode is per-directory too — the
 `Developer ▸ Configure Third-Party Inference` menu is gated on `allowDevTools`
 in `developer_settings.json` inside whichever `userData` directory is live, so
 enabling it in one mode does not enable it in the other.
+
+### The deployment-mode pin
+
+`appliedId` alone does not switch Claude Desktop. Since the deployment-mode
+chooser appeared, Claude Desktop persists the user's choice as a top-level
+`"deploymentMode"` key (`"1p"` / `"3p"`) in its own settings file,
+`~/Library/Application Support/Claude-3p/claude_desktop_config.json` — the one
+that also holds the user's preferences. The loader resolves every launch: while
+the persisted pin is `"1p"`, first-party wins and the library is never read,
+however valid `appliedId` is. One "Claude.ai" click in the chooser — especially
+with "don't ask again" — silently strands every later bridge switch; this is
+exactly the "it restarts Claude Desktop but keeps the old models" report.
+
+So `applyBridgeEntry` and `applyEntry` lift the pin (`"3p"`) and
+`applyAnthropicModels` sets it (`"1p"`), the way Claude Desktop records its own
+choices. The file is round-tripped as a `JSONValue` tree and only that one key
+changes; a file that does not parse is left untouched (its loader reads an
+unreadable pin as "no preference", which honours the library anyway, while
+overwriting would cost the user their preferences). `status()` reports the
+stranded state — pin at `"1p"` with our entry applied — so the menu and Settings
+can say it out loud, and tests pin the lift, the set, and the leave-alone rules.
 
 ### The advertised-id scheme
 

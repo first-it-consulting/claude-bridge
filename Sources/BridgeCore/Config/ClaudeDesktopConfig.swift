@@ -13,6 +13,11 @@ import Foundation
 /// it did not create, and it never touches the managed-preferences domain. When
 /// an MDM profile is present it wins outright and anything written here is
 /// ignored, so the caller is told rather than silently doing nothing.
+///
+/// Applying an entry also lifts Claude Desktop's deployment-mode pin — see
+/// ``DeploymentMode``. Without that, a user who once chose "Claude.ai" in
+/// Claude Desktop's mode chooser is stranded on first-party models no matter
+/// what is written to the library.
 public struct ClaudeDesktopConfig: Sendable {
 
     /// The name the bridge gives its own entry. Entries are matched by this
@@ -94,6 +99,11 @@ public struct ClaudeDesktopConfig: Sendable {
         /// Claude Desktop is off third-party inference entirely and using
         /// Anthropic's own models.
         public var usingAnthropicModels: Bool = false
+        /// Claude Desktop has persisted `"deploymentMode": "1p"` in its own
+        /// settings file, which makes every launch first-party regardless of
+        /// `appliedId`. While that pin holds, even our own applied entry is
+        /// ignored — see ``DeploymentMode``.
+        public var deploymentModePinnedFirstParty: Bool = false
     }
 
     public var configDirectory: URL
@@ -127,6 +137,65 @@ public struct ClaudeDesktopConfig: Sendable {
         configDirectory.appendingPathComponent("\(id).json")
     }
 
+    /// Claude Desktop's own settings file, next to the library rather than in
+    /// it. It holds the user's preferences and the deployment-mode pin.
+    var deploymentModeURL: URL {
+        configDirectory.deletingLastPathComponent()
+            .appendingPathComponent("claude_desktop_config.json")
+    }
+
+    // MARK: - Deployment mode
+
+    /// The deployment mode Claude Desktop persists for itself, in the top-level
+    /// `deploymentMode` key of its own settings file.
+    ///
+    /// Since the deployment-mode chooser appeared, a launch reads the library
+    /// at all only when the persisted value is not `"1p"`: the loader resolves
+    /// first-party while the pin holds, whatever `appliedId` points at. A
+    /// single "Claude.ai" click in the chooser — especially with "don't ask
+    /// again" — therefore silently strands every later bridge switch, which is
+    /// how "it restarts Claude Desktop but keeps the old models" happens. The
+    /// values mirror the app's own: it only honours `"1p"` and `"3p"`.
+    public enum DeploymentMode: String, Sendable {
+        case firstParty = "1p"
+        case thirdParty = "3p"
+    }
+
+    /// The persisted pin, or nil when Claude Desktop has no preference stored —
+    /// file absent, key absent, a value it would not honour, or a file it
+    /// could not parse. nil means the chooser may appear, and a library entry
+    /// is honoured.
+    public func readDeploymentMode() -> DeploymentMode? {
+        guard let data = try? Data(contentsOf: deploymentModeURL),
+              case .object(let fields)? = try? JSONValue.decode(data)
+        else { return nil }
+        return DeploymentMode(rawValue: fields["deploymentMode"]?.stringValue ?? "")
+    }
+
+    /// Sets the pin, changing only the `deploymentMode` key.
+    ///
+    /// The same file holds the user's preferences, so it round-trips through
+    /// `JSONValue` and every other key survives untouched. A file that does
+    /// not parse as an object is left alone: Claude Desktop treats a pin it
+    /// cannot read as "no preference" — the state a third-party switch wants
+    /// anyway — and overwriting would cost the user their preferences to fix
+    /// nothing.
+    private func setDeploymentMode(_ mode: DeploymentMode) throws {
+        var fields: [String: JSONValue] = [:]
+        if FileManager.default.fileExists(atPath: deploymentModeURL.path) {
+            guard case .object(let existing)? = (try? Data(contentsOf: deploymentModeURL))
+                .flatMap({ try? JSONValue.decode($0) })
+            else { return }
+            if existing["deploymentMode"]?.stringValue == mode.rawValue { return }
+            fields = existing
+        }
+        fields["deploymentMode"] = .string(mode.rawValue)
+
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
+        try writeAtomically(try enc.encode(JSONValue.object(fields)), to: deploymentModeURL)
+    }
+
     public func status() -> Status {
         let fm = FileManager.default
         let meta = (try? readMeta()) ?? Meta()
@@ -145,7 +214,8 @@ public struct ClaudeDesktopConfig: Sendable {
             restorableEntries: meta.entries
                 .filter { $0.name != Self.entryName }
                 .map { ConfigEntry(id: $0.id, name: $0.name, detail: detail(forEntry: $0.id)) },
-            usingAnthropicModels: !Self.isLibraryID(meta.appliedId)
+            usingAnthropicModels: !Self.isLibraryID(meta.appliedId),
+            deploymentModePinnedFirstParty: readDeploymentMode() == .firstParty
         )
     }
 
@@ -160,7 +230,9 @@ public struct ClaudeDesktopConfig: Sendable {
 
     // MARK: - Writing
 
-    /// Writes the bridge's entry and makes it the applied one.
+    /// Writes the bridge's entry, makes it the applied one, and lifts any
+    /// first-party deployment-mode pin — without the pin lifted, Claude
+    /// Desktop never reads the entry back.
     ///
     /// - Returns: the id that was applied beforehand, so the caller can offer
     ///   to put it back.
@@ -194,6 +266,7 @@ public struct ClaudeDesktopConfig: Sendable {
         }
         meta.appliedId = id
         try writeMeta(meta)
+        try setDeploymentMode(.thirdParty)
 
         return previousAppliedId == id ? nil : previousAppliedId
     }
@@ -206,17 +279,23 @@ public struct ClaudeDesktopConfig: Sendable {
     /// first-party inference when it does not. Blanking it is therefore the
     /// documented-by-behaviour off switch, and it leaves every entry in place
     /// so switching back is just another `applyEntry`.
+    ///
+    /// The deployment-mode pin is set to match, so Claude Desktop stays on
+    /// Anthropic's models without asking again — the same choice, recorded the
+    /// way Claude Desktop records its own.
     public func applyAnthropicModels() throws {
         var meta = try readMeta()
         meta.appliedId = ""
         try writeMeta(meta)
+        try setDeploymentMode(.firstParty)
     }
 
     /// Points Claude Desktop at any entry already in its library, by id.
     ///
     /// This is how the user switches back to a configuration the bridge did not
-    /// create. It writes `appliedId` and nothing else, so the entry's own
-    /// contents stay exactly as Claude Desktop left them.
+    /// create. It touches `appliedId` — and the deployment-mode pin, which
+    /// every library entry needs lifted — and nothing else, so each entry's
+    /// own contents stay exactly as Claude Desktop left them.
     ///
     /// - Returns: the entry Claude Desktop now points at.
     @discardableResult
@@ -227,6 +306,7 @@ public struct ClaudeDesktopConfig: Sendable {
         }
         meta.appliedId = entry.id
         try writeMeta(meta)
+        try setDeploymentMode(.thirdParty)
         return ConfigEntry(id: entry.id, name: entry.name)
     }
 
