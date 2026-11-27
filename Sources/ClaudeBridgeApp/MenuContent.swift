@@ -99,6 +99,17 @@ struct MenuContent: View {
                    state.claudeStatus.bridgeEntryApplied {
                     Text("Claude Desktop is pinned to its own models — pick a profile to lift it")
                 }
+                // A stopped bridge (or a bind that failed at launch) fails
+                // every Claude Desktop request with a connection error, while
+                // this menu stayed passive about it. Say it where the user
+                // looks when "Claude Desktop shows nothing".
+                if !state.serverRunning, state.claudeStatus.bridgeEntryApplied {
+                    if let error = state.serverError {
+                        Text("Bridge could not start: \(error)")
+                    } else {
+                        Text("Bridge is stopped — Claude Desktop's requests fail until it starts")
+                    }
+                }
                 ForEach(Array(state.destinations.enumerated()), id: \.offset) { _, destination in
                     Toggle(isOn: binding(for: destination)) {
                         Text(ClaudeDestinationUI.label(for: destination))
